@@ -1,4 +1,4 @@
-# **Data** hackathon playbook
+# **Data hackathon playbook**
 
 This README turns the kickoff into a checklist for scoring and delivery. Every fact below came from the live kickoff transcript.
 
@@ -16,11 +16,11 @@ Round one asks for your slide deck, a video, and your code to all judges. That r
 
 ## **Problem** you are solving
 
-You have about seven years of nonprofit tax return data in structured XML. From that, the program wants signal on who is thriving, who is financially resilient, and who is at risk of not keeping the lights on if a large grant disappears. Find where an organization tips from successful to unsuccessful. Consider where a donor gets leverage, for example a large national charity that keeps doing its work versus a smaller charity that might expand materiality with new funds. Track how you judge success versus failure across years.
+You have about 7 years of nonprofit tax return data in structured XML. From that, the program wants signal on who is thriving, who is financially resilient, and who is at risk of not keeping the lights on if a large grant disappears. Find where an organization tips from successful to unsuccessful. Consider where a donor gets leverage, for example a large national charity that keeps doing its work versus a smaller charity that might expand materiality with new funds. Track how you judge success versus failure across years.
 
 Three dimensions named in the brief are resilience prediction, peer benchmarking, and funding risk simulations such as a large shock. Look for characteristics in tax lines and spending that separate meaningful peer groups.
 
-Fair Island Advisors works with nonprofits. Maya from the sponsor team said nonprofits are tax exempt, common form is 501(c), and filings are public. She noted that if the nonprofit sector were an industry it would rank third in the United States by size after retail and manufacturing, with about 1.4 trillion dollars in economic activity in 2023, about thirteen million employees, and on the order of two million organizations. She stated that about four percent of organizations generate about eighty percent of revenue, with healthcare and education, including private universities named as examples, as two large slices, while legal aid, environmental protection, child safety, animal welfare, and immigration were listed as examples of other mission areas. She wants to see which organizations could plausibly build invested reserves instead of spending every inflow, and said ninety six percent do not currently have enough cushion to do that comfortably. Geography may matter state to state or county to county. A single Form 990 from one year alone is not enough for her firm to decide whether to pursue a relationship.
+Fair Island Advisors works with nonprofits. Maya from the sponsor team said nonprofits are tax exempt, common form is 501(c), and filings are public. She noted that if the nonprofit sector were an industry it would rank third in the United States by size after retail and manufacturing, with about $1.4 trillion in economic activity in 2023, about 13 million employees, and on the order of 2 million organizations. She stated that about 4% of organizations generate about 80% of revenue, with healthcare and education, including private universities named as examples, as two large slices, while legal aid, environmental protection, child safety, animal welfare, and immigration were listed as examples of other mission areas. She wants to see which organizations could plausibly build invested reserves instead of spending every inflow, and said 96% do not currently have enough cushion to do that comfortably. Geography may matter state to state or county to county. A single Form 990 from one year alone is not enough for her firm to decide whether to pursue a relationship.
 
 ## **Who** judges you
 
@@ -48,17 +48,17 @@ Do not quit because other teams feel the same pressure. Eric said some winners a
 
 ## **Deliverables** and timing called out in the kickoff
 
-Video length for the submission is five minutes. There is no hard slide cap, but organizers asked for roughly fifteen slides or fewer if you can. Full spec goes out separately.
+Video length for the submission is 5 minutes. There is no hard slide cap, but organizers asked for roughly 15 slides or fewer if you can. Full spec goes out separately.
 
-Office hours were announced as six to eight pm on kickoff day and three to eight pm the following day. Jacob and Niti run the hackathon and hold hours.
+Office hours were announced as 6 to 8 pm on kickoff day and 3 to 8 pm the following day. Jacob and Niti run the hackathon and hold hours.
 
 You may publish your work after the event. Organizers said what you build is yours, the data is public, and they hope you post to GitHub and LinkedIn. Eric offered to connect interested students with marketing for blogs and noted a photographer named Tim may be present at the award event.
 
 ## **Prizes** and ceremony
 
-Gold, silver, and bronze team prizes were announced. Eric named two thousand dollars per team for the silver award in the kickoff audio. Extra awards include best team, best storytelling, and best presenter.
+Gold, silver, and bronze team prizes were announced. Eric named $2,000 per team for the silver award in the kickoff audio. Extra awards include best team, best storytelling, and best presenter.
 
-Awards are presented at Spark Social on April twenty first. Attendance was encouraged even if you do not advance, to support classmates.
+Awards are presented at Spark Social on April 21. Attendance was encouraged even if you do not advance, to support classmates.
 
 ## **Repository** hygiene for this workspace
 
