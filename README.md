@@ -91,8 +91,8 @@ The pipeline reads raw XML from `data/raw/` and writes scored artifacts to `data
 ### Project Structure
 
 ```
-app/                  Next.js frontend (TypeScript, React 19, Tailwind)
-pipeline/             Python analytics pipeline (lxml, pandas, scikit-learn)
+app/                  Next.js frontend (TypeScript, React 19, custom CSS)
+pipeline/             Python analytics pipeline
 contracts/            Shared typed interfaces between pipeline and frontend
 data/raw/             Local mirror of IRS 990 XML corpus
 data/processed/       Generated artifacts (scores, scenarios, case studies)

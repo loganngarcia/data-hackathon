@@ -16,7 +16,7 @@ Python pipeline (lxml, pandas)
 Precomputed JSON artifacts (5 typed interfaces)
     |
     v
-Next.js frontend (TypeScript, React 19, Tailwind)
+Next.js frontend (TypeScript, React 19, custom CSS)
     |  Portfolio Screener -> Organization Detail -> Scenario + Memo
     v
 Judge-facing demo (Vercel or localhost)
@@ -94,7 +94,7 @@ Each intent has a deterministic template fallback that consumes the structured e
 |-------|-----------|
 | Data ingestion | Python 3.10+, lxml, pandas |
 | Storage | Parquet files, DuckDB for analytical queries |
-| Scoring | Python, scikit-learn (Random Forest / XGBoost for early-warning classifier) |
-| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS |
+| Scoring | Python (deterministic weighted-signal model; ML classifier planned) |
+| Frontend | Next.js 15, React 19, TypeScript, custom CSS (editorial design system) |
 | Contracts | TypeScript interfaces shared between pipeline output and frontend input |
 | Deployment | Vercel (frontend), local execution (pipeline) |
