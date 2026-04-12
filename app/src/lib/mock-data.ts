@@ -11,17 +11,17 @@ export const screens: Array<{ key: ScreenKey; label: string; blurb: string }> = 
   {
     key: "screener",
     label: "Portfolio Screener",
-    blurb: "Rank the nonprofit portfolio and pick a target worth deeper analysis.",
+    blurb: "Sort the portfolio and isolate one organization worth deeper review.",
   },
   {
     key: "detail",
     label: "Organization Detail",
-    blurb: "Open an org, inspect the signals, and defend the story with peers.",
+    blurb: "Read the operating story beside the peer frame and the risk flags.",
   },
   {
     key: "scenario",
     label: "Scenario + Memo",
-    blurb: "Turn the analysis into a decision memo and a presentation-ready recommendation.",
+    blurb: "Translate the evidence into a recommendation the judges can repeat back.",
   },
 ];
 
@@ -106,6 +106,72 @@ export const orgDetails: Record<string, OrgDetail> = {
     narrative:
       "This is the kind of organization that looks strong on paper and becomes even more compelling when the peer frame is added. It is a good demo target because the recommendation is clear but still defensible.",
   },
+  "bright-path": {
+    id: "bright-path",
+    organizationName: "Bright Path Youth",
+    summary:
+      "Program demand is holding up, but reserve rebuilding has not kept pace with staffing and service intensity.",
+    website: "brightpath.example",
+    missionArea: "Youth services",
+    geography: "Sacramento Valley",
+    currentYearRevenue: 5410000,
+    priorYearRevenue: 5160000,
+    revenueMix: [
+      { label: "Government contracts", value: 38, tone: "accent" },
+      { label: "Foundation grants", value: 29, tone: "warm" },
+      { label: "Individual gifts", value: 21, tone: "muted" },
+      { label: "Events + other", value: 12, tone: "muted" },
+    ],
+    topSignals: [
+      "Demand growth is still supporting positive revenue despite a tighter operating base.",
+      "The organization remains close to the peer median on staffing efficiency.",
+      "Individual giving is rising fast enough to matter if it is converted into recurring support.",
+    ],
+    watchouts: [
+      "Reserve coverage remains thin for an organization with rising service obligations.",
+      "Payroll pressure is absorbing gains that could otherwise strengthen the balance sheet.",
+    ],
+    peerBenchmarks: [
+      { label: "Reserve months", orgValue: 6.1, peerMedian: 6.8 },
+      { label: "Revenue growth %", orgValue: 4.8, peerMedian: 5.1 },
+      { label: "Staff per $1M", orgValue: 7.8, peerMedian: 7.5 },
+    ],
+    narrative:
+      "Bright Path is a useful middle-case for the demo because the answer is not to slash growth or to celebrate it blindly. The recommendation needs to sound operational: stabilize, rebuild reserves, and keep the mission intact.",
+  },
+  "harbor-house": {
+    id: "harbor-house",
+    organizationName: "Harbor House Network",
+    summary:
+      "A fragile housing-services nonprofit with weakening revenue, low liquidity, and too much dependence on a narrow grant base.",
+    website: "harborhouse.example",
+    missionArea: "Housing stability",
+    geography: "East Bay corridor",
+    currentYearRevenue: 8090000,
+    priorYearRevenue: 8350000,
+    revenueMix: [
+      { label: "Government grants", value: 47, tone: "warm" },
+      { label: "Major foundation partner", value: 28, tone: "accent" },
+      { label: "Individual giving", value: 14, tone: "muted" },
+      { label: "Other", value: 11, tone: "muted" },
+    ],
+    topSignals: [
+      "The mission remains high-priority, which helps explain why support should focus on continuity rather than expansion.",
+      "Staffing is still relatively efficient for the scale of services being delivered.",
+      "The file is easy to defend as a tipping-risk example because the pressure points align.",
+    ],
+    watchouts: [
+      "Liquidity is materially below the peer frame for a mission that cannot tolerate service disruption.",
+      "The revenue base is too concentrated for a year that is already showing contraction.",
+    ],
+    peerBenchmarks: [
+      { label: "Reserve months", orgValue: 3.8, peerMedian: 6.5 },
+      { label: "Revenue growth %", orgValue: -3.1, peerMedian: 2.7 },
+      { label: "Staff per $1M", orgValue: 7.3, peerMedian: 7.9 },
+    ],
+    narrative:
+      "Harbor House should be framed as the cautionary case. The story is not that the nonprofit is failing its mission. The story is that the organization is operating with too little cushion for the volatility already visible in the filing.",
+  },
 };
 
 export const scenarioResults: Record<string, ScenarioResult> = {
@@ -157,8 +223,8 @@ export const scenarioResults: Record<string, ScenarioResult> = {
 };
 
 export const memoContext: MemoContext = {
-  audience: "Hackathon judges and Fairlight Advisors",
-  ask: "Select the strongest nonprofit to support with capital, counsel, or follow-up diligence.",
+  audience: "Fairlight advisors and round-one judges",
+  ask: "Choose the organization that merits support now and defend the recommendation with operating evidence.",
   timeHorizon: "12 months",
   constraints: [
     "Keep the story under five minutes",
@@ -174,9 +240,9 @@ export const memoContext: MemoContext = {
 
 export const heroCaseStudy: HeroCaseStudy = {
   organizationId: "ocean-bridge",
-  headline: "From 3,000 rows of tax data to one clear recommendation",
-  oneLiner: "A mock case study showing how the screener, detail view, and scenario memo chain into a judge-ready story.",
-  outcome: "Ocean Bridge becomes the demo's flagship 'support now' case because the data points all move in the same direction.",
+  headline: "One portfolio scan should lead to one confident recommendation",
+  oneLiner: "The mock hero case keeps the entire demo anchored on a single, defensible operating story.",
+  outcome: "Ocean Bridge becomes the flagship 'support now' case because the screener, peer frame, and scenario all reinforce the same direction.",
   whyItMatters:
-    "The hero case lets the team narrate a complete portfolio triage workflow without depending on the backend being finished.",
+    "The hero case lets the team narrate a complete portfolio workflow without waiting for the live data pipeline to be finished.",
 };
