@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "skills": {
+    "data-scientist": {
+      "source": "borghei/claude-skills",
+      "sourceType": "github",
+      "computedHash": "fa0318bb139b414b83e9a46ef9f8d7c92bac1335da59410523eb28a6ae833ae6"
+    },
+    "designing-surveys": {
+      "source": "refoundai/lenny-skills",
+      "sourceType": "github",
+      "computedHash": "6d988f04fc48420fe734a2d7172a69f9e32bbba12483d855ffffc4abdeab6f05"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "computedHash": "9e1c8b3103f92fa8092568a44fe64858de7c5c9dc65ce4bea8f168080e889cfd"
+    },
+    "jupyter-notebook": {
+      "source": "openai/skills",
+      "sourceType": "github",
+      "computedHash": "aec85b4976af33923f957db1667207dfe8418592ddd91bbe4da24bbdc3058d8c"
+    },
+    "kaggle": {
+      "source": "shepsci/kaggle-skill",
+      "sourceType": "github",
+      "computedHash": "70ab9e26f7cc0bb1e775e08a9c368de80eb603aa585e5f205530913cc35d4ec8"
+    },
+    "machine-learning": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "computedHash": "b0fe8b1636aa174bda1bab2aa3e4d287adc1888d79011d938e1319aee8fc6763"
+    },
+    "pandas-pro": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "computedHash": "66059434cd805de09e273ee3d5ebe20f0014224d4769a46c4b2b2c99b34d28f2"
+    },
+    "statistics-verifier": {
+      "source": "travisjneuman/.claude",
+      "sourceType": "github",
+      "computedHash": "1de30d7542464850c550c1095766f231fa6b2b60f573e55172bc3c5ecc361ac4"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+.ipynb_checkpoints/
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
