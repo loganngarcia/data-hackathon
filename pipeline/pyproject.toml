@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hackathon-pipeline"
+version = "0.1.0"
+description = "Aggies Data Hackathon 2026 data-foundation pipeline scaffold"
+requires-python = ">=3.10"
+
+[project.scripts]
+hackathon-pipeline = "hackathon_pipeline.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,19 @@
+"""Aggies Data Hackathon 2026 pipeline scaffold."""
+
+from .constants import (
+    DRIVE_HACKATHON_STUDENT_FILES_URL,
+    DRIVE_IRS990DATA_URL,
+    DRIVE_XML_FILES_URL,
+    PROJECT_ROOT,
+    PROCESSED_DATA_DIR,
+    RAW_DATA_DIR,
+)
+
+__all__ = [
+    "DRIVE_HACKATHON_STUDENT_FILES_URL",
+    "DRIVE_IRS990DATA_URL",
+    "DRIVE_XML_FILES_URL",
+    "PROJECT_ROOT",
+    "PROCESSED_DATA_DIR",
+    "RAW_DATA_DIR",
+]
