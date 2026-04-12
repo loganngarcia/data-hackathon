@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Data (too large for git)
+data/raw/
+data/processed/
+data/*.duckdb
+data/*.parquet
+
+# Node
+web/node_modules/
+web/.next/
+
+# Env
+.env
+.env.local
