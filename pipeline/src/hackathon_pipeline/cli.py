@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Sequence
 
 from .constants import INVENTORY_MANIFEST_PATH, NORMALIZED_DIR, RAW_DATA_DIR, FEATURES_DIR
 from .features import build_features
 from .inventory import write_inventory_report
-from .normalize import normalize_corpus
+from .normalize import NormalizationError, normalize_corpus
 
 
 def _json_dump(payload: object) -> str:
@@ -25,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     inventory_parser.add_argument("--raw-root", type=Path, default=RAW_DATA_DIR)
     inventory_parser.add_argument("--output", type=Path, default=INVENTORY_MANIFEST_PATH)
 
-    normalize_parser = subparsers.add_parser("normalize", help="Placeholder normalization step.")
+    normalize_parser = subparsers.add_parser("normalize", help="Parse 990 XML corpus into canonical tables.")
     normalize_parser.add_argument("--raw-root", type=Path, default=RAW_DATA_DIR)
     normalize_parser.add_argument("--output-dir", type=Path, default=NORMALIZED_DIR)
 
@@ -46,7 +47,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "normalize":
-        print(_json_dump(normalize_corpus(args.raw_root, args.output_dir)))
+        try:
+            result = normalize_corpus(args.raw_root, args.output_dir)
+        except NormalizationError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(_json_dump(result))
         return 0
 
     if args.command == "build-features":
