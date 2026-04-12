@@ -14,3 +14,17 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+node_modules/
+.next/
+out/
+.turbo/
+dist/
+build/
+.coverage
+coverage/
+data/raw/*
+!data/raw/.gitkeep
+!data/raw/README.md
+data/processed/*
+!data/processed/.gitkeep
+!data/processed/README.md
