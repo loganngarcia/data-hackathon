@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  --moobu-blue: #3B69B7;
+  --moobu-orange: #F5A623;
+  --moobu-blue-light: #E8EEF7;
+  --moobu-orange-light: #FEF3E2;
+  --background: #F8F9FB;
+  --foreground: #1a1a2e;
+  --card-bg: #ffffff;
+  --border: #E5E7EB;
+  --muted: #6B7280;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-moobu-blue: #3B69B7;
+  --color-moobu-blue-light: #E8EEF7;
+  --color-moobu-orange: #F5A623;
+  --color-moobu-orange-light: #FEF3E2;
+  --color-card: #ffffff;
+  --color-border: #E5E7EB;
+  --color-muted: #6B7280;
+  --color-thriving: #16A34A;
+  --color-stable: #3B69B7;
+  --color-needs-support: #F5A623;
+  --color-urgent: #DC2626;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Score tier badge colors */
+.tier-thriving { background: #DCFCE7; color: #166534; }
+.tier-stable { background: #E8EEF7; color: #1E3A6E; }
+.tier-needs-support { background: #FEF3E2; color: #92400E; }
+.tier-urgent { background: #FEE2E2; color: #991B1B; }
