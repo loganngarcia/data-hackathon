@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import duckdb
@@ -9,10 +10,15 @@ import duckdb
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[3] / "data" / "moobu.duckdb"
 
 _connection: duckdb.DuckDBPyConnection | None = None
+_lock = threading.Lock()
 
 
 def get_db(db_path: Path | None = None) -> duckdb.DuckDBPyConnection:
-    """Get or create a DuckDB connection."""
+    """Get or create a DuckDB connection.
+
+    For API requests, callers should use cursor() on the returned connection
+    to get a thread-safe cursor.
+    """
     global _connection
     if _connection is not None:
         return _connection
@@ -20,6 +26,16 @@ def get_db(db_path: Path | None = None) -> duckdb.DuckDBPyConnection:
     path.parent.mkdir(parents=True, exist_ok=True)
     _connection = duckdb.connect(str(path))
     return _connection
+
+
+def query(sql: str, params=None):
+    """Thread-safe query execution. Returns a new cursor per call."""
+    db = get_db()
+    with _lock:
+        cursor = db.cursor()
+    if params:
+        return cursor.execute(sql, params)
+    return cursor.execute(sql)
 
 
 def reset_connection() -> None:

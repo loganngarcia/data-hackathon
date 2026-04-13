@@ -6,7 +6,7 @@ import json
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .db import get_db
+from .db import query
 from .models import (
     AtRiskOrg,
     MetricBreakdown,
@@ -34,7 +34,6 @@ def list_nonprofits(
     sort_by: str = "composite_score",
     sort_dir: str = "desc",
 ):
-    db = get_db()
     conditions = []
     params: dict = {}
 
@@ -65,10 +64,7 @@ def list_nonprofits(
         sort_by = "composite_score"
     direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
 
-    count_q = f"""
-        SELECT COUNT(*) FROM org_scores s WHERE {where}
-    """
-    total = db.execute(count_q, params).fetchone()[0]
+    total = query(f"SELECT COUNT(*) FROM org_scores s WHERE {where}", params).fetchone()[0]
 
     offset = (page - 1) * page_size
     data_q = f"""
@@ -83,7 +79,7 @@ def list_nonprofits(
         ORDER BY {sort_by} {direction} NULLS LAST
         LIMIT {page_size} OFFSET {offset}
     """
-    rows = db.execute(data_q, params).fetchall()
+    rows = query(data_q, params).fetchall()
 
     items = [
         NonprofitSummary(
@@ -99,19 +95,14 @@ def list_nonprofits(
 
 @router.get("/nonprofit/{ein}", response_model=NonprofitProfile)
 def get_nonprofit(ein: str):
-    db = get_db()
-
-    score_row = db.execute(
-        "SELECT * FROM org_scores WHERE ein = $1", [ein]
-    ).fetchone()
+    score_row = query("SELECT * FROM org_scores WHERE ein = $1", [ein]).fetchone()
     if not score_row:
         raise HTTPException(status_code=404, detail=f"Nonprofit {ein} not found")
 
-    cols = [c[0] for c in db.execute("DESCRIBE org_scores").fetchall()]
+    cols = [c[0] for c in query("DESCRIBE org_scores").fetchall()]
     score_dict = dict(zip(cols, score_row))
 
-    # Get yearly financials
-    fin_rows = db.execute(
+    fin_rows = query(
         """SELECT tax_year, total_revenue, total_expenses, contributions_grants,
                   program_service_rev, investment_income, other_revenue,
                   net_assets_eoy, rev_less_expenses
@@ -129,8 +120,7 @@ def get_nonprofit(ein: str):
         for r in fin_rows
     ]
 
-    # Get early warning info
-    warning = db.execute(
+    warning = query(
         "SELECT vulnerability_score, factors, recommendation FROM early_warnings WHERE ein = $1",
         [ein],
     ).fetchone()
@@ -170,8 +160,7 @@ def get_nonprofit(ein: str):
 
 @router.get("/at-risk", response_model=list[AtRiskOrg])
 def get_at_risk(limit: int = Query(100, ge=1, le=500)):
-    db = get_db()
-    rows = db.execute(f"""
+    rows = query(f"""
         SELECT
             w.ein, w.org_name, s.state, s.composite_score, s.tier,
             w.vulnerability_score, w.factors, w.recommendation,
@@ -196,28 +185,22 @@ def get_at_risk(limit: int = Query(100, ge=1, le=500)):
 
 @router.get("/stats/overview", response_model=OverviewStats)
 def get_overview():
-    db = get_db()
-
-    total = db.execute("SELECT COUNT(DISTINCT ein) FROM filings").fetchone()[0]
-    scored = db.execute("SELECT COUNT(*) FROM org_scores").fetchone()[0]
-    at_risk = db.execute(
+    total = query("SELECT COUNT(DISTINCT ein) FROM filings").fetchone()[0]
+    scored = query("SELECT COUNT(*) FROM org_scores").fetchone()[0]
+    at_risk = query(
         "SELECT COUNT(*) FROM early_warnings WHERE vulnerability_score > 0.5"
     ).fetchone()[0]
 
-    tier_rows = db.execute(
-        "SELECT tier, COUNT(*) FROM org_scores GROUP BY tier"
-    ).fetchall()
+    tier_rows = query("SELECT tier, COUNT(*) FROM org_scores GROUP BY tier").fetchall()
     score_dist = {r[0]: r[1] for r in tier_rows}
 
-    state_rows = db.execute(
+    state_rows = query(
         "SELECT state, COUNT(*) FROM org_scores WHERE state IS NOT NULL GROUP BY state ORDER BY COUNT(*) DESC LIMIT 20"
     ).fetchall()
     state_dist = {r[0]: r[1] for r in state_rows}
 
-    avg = db.execute("SELECT AVG(composite_score) FROM org_scores").fetchone()[0] or 0
-    median = db.execute(
-        "SELECT MEDIAN(composite_score) FROM org_scores"
-    ).fetchone()[0] or 0
+    avg = query("SELECT AVG(composite_score) FROM org_scores").fetchone()[0] or 0
+    median = query("SELECT MEDIAN(composite_score) FROM org_scores").fetchone()[0] or 0
 
     return OverviewStats(
         total_orgs=total,
@@ -232,9 +215,7 @@ def get_overview():
 
 @router.get("/nonprofit/{ein}/peers", response_model=PeerComparison)
 def get_peers(ein: str, limit: int = Query(10, ge=1, le=50)):
-    db = get_db()
-
-    target = db.execute(
+    target = query(
         "SELECT composite_score, state, latest_total_revenue FROM org_scores WHERE ein = $1",
         [ein],
     ).fetchone()
@@ -243,30 +224,25 @@ def get_peers(ein: str, limit: int = Query(10, ge=1, le=50)):
 
     target_score, target_state, target_rev = target
 
-    # Find peers: same state, similar revenue size (within 5x)
     if target_rev and target_rev > 0:
         min_rev = target_rev // 5
         max_rev = target_rev * 5
-        peers_q = """
+        rows = query("""
             SELECT ein, org_name, state, composite_score, tier, latest_total_revenue
             FROM org_scores
-            WHERE ein != $1
-              AND state = $2
+            WHERE ein != $1 AND state = $2
               AND latest_total_revenue BETWEEN $3 AND $4
             ORDER BY ABS(composite_score - $5)
             LIMIT $6
-        """
-        rows = db.execute(peers_q, [ein, target_state, min_rev, max_rev, target_score or 0, limit]).fetchall()
+        """, [ein, target_state, min_rev, max_rev, target_score or 0, limit]).fetchall()
     else:
-        # Fallback: same state, any revenue
-        peers_q = """
+        rows = query("""
             SELECT ein, org_name, state, composite_score, tier, latest_total_revenue
             FROM org_scores
             WHERE ein != $1 AND state = $2
             ORDER BY ABS(composite_score - $3)
             LIMIT $4
-        """
-        rows = db.execute(peers_q, [ein, target_state, target_score or 0, limit]).fetchall()
+        """, [ein, target_state, target_score or 0, limit]).fetchall()
 
     peers = [
         PeerOrg(
