@@ -320,6 +320,10 @@ input {
   grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
 }
 
+.stage-scenario {
+  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr);
+}
+
 .section-sheet,
 .focus-sheet,
 .memo-sheet {
@@ -700,6 +704,99 @@ input {
   padding-left: 20px;
 }
 
+/* --- Org list header + sort toggle --- */
+
+.org-list-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 12px 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.sort-toggle:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* --- Copilot tab bar + output --- */
+
+.copilot-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.copilot-tab {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+.copilot-tab:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.copilot-tab[data-active="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff5ec;
+}
+
+.copilot-output {
+  padding: 22px 24px;
+  border: 1px solid rgba(31, 39, 51, 0.08);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.3);
+  animation: copilot-fade 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.copilot-output-description {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-style: italic;
+}
+
+@keyframes copilot-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes stage-enter {
   from {
     opacity: 0;
@@ -727,6 +824,7 @@ input {
   }
 
   .stage-screener,
+  .stage-scenario,
   .detail-hero,
   .detail-columns,
   .signal-columns,
@@ -763,6 +861,7 @@ input {
 
   .org-row,
   .org-row-metrics,
+  .org-list-header,
   .metric-strip {
     grid-template-columns: 1fr;
   }

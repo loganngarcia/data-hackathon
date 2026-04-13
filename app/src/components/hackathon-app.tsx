@@ -1,6 +1,12 @@
 "use client";
 
-import { startTransition, useState } from "react";
+import { startTransition, useMemo, useState } from "react";
+import {
+  buildAdvisorMemo,
+  buildBestIntervention,
+  buildTrendNarrative,
+  buildWhyFlagged,
+} from "@/lib/copilot-intents";
 import {
   heroCaseStudy,
   memoContext,
@@ -9,7 +15,10 @@ import {
   screenerRows,
   screens,
 } from "@/lib/mock-data";
-import type { OrgDetail, ScreenKey, ScreenerRow } from "@/lib/types";
+import type { OrgDetail, ScenarioResult, ScreenKey, ScreenerRow } from "@/lib/types";
+
+type CopilotTab = "why-flagged" | "trend" | "intervention" | "memo";
+type SortDir = "desc" | "asc";
 
 function formatCompactCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -36,18 +45,6 @@ function barWidth(value: number, max = 100) {
   return `${Math.max(8, Math.round((value / max) * 100))}%`;
 }
 
-function buildMemoParagraphs(
-  row: ScreenerRow,
-  detail: OrgDetail,
-  scenario: (typeof scenarioResults)[keyof typeof scenarioResults],
-) {
-  return [
-    `${detail.organizationName} should be framed as the ${row.riskBand.toLowerCase()} case in the portfolio because ${detail.topSignals[0].replace(/\.$/, "")}.`,
-    `The operating defense is concrete: ${formatSignedPercent(row.growthRate)} growth on ${formatCompactCurrency(row.revenue)} of revenue, ${row.reserveMonths.toFixed(1)} months of reserves, and a peer story that stays legible under scrutiny.`,
-    `Recommended move: ${scenario.recommendation} If the team ${scenario.assumption.charAt(0).toLowerCase()}${scenario.assumption.slice(1)}, the file projects to ${scenario.riskShift.toLowerCase()}.`,
-  ];
-}
-
 export function HackathonApp() {
   const [screen, setScreen] = useState<ScreenKey>("screener");
   const [selectedOrgId, setSelectedOrgId] = useState(screenerRows[0].id);
@@ -56,7 +53,6 @@ export function HackathonApp() {
   const detail = orgDetails[selectedRow.id] ?? orgDetails["ocean-bridge"];
   const scenario = scenarioResults[selectedRow.id] ?? scenarioResults["ocean-bridge"];
   const activeScreen = screens.find((item) => item.key === screen) ?? screens[0];
-  const memoParagraphs = buildMemoParagraphs(selectedRow, detail, scenario);
 
   function navigate(nextScreen: ScreenKey) {
     startTransition(() => setScreen(nextScreen));
@@ -143,9 +139,9 @@ export function HackathonApp() {
             <p className="workspace-copy">{activeScreen.blurb}</p>
           </div>
           <div className="workspace-status" aria-label="App status">
-            <span>Mocked fixtures</span>
-            <span>Typed contracts</span>
-            <span>Recorded-demo ready</span>
+            <span>3 orgs scored</span>
+            <span>4 copilot intents</span>
+            <span>Demo ready</span>
           </div>
         </header>
 
@@ -174,7 +170,6 @@ export function HackathonApp() {
               row={selectedRow}
               detail={detail}
               scenario={scenario}
-              memoParagraphs={memoParagraphs}
               onBack={() => navigate("detail")}
             />
           ) : null}
@@ -197,6 +192,20 @@ function PortfolioScreen({
   onSelect: (row: ScreenerRow, nextScreen?: ScreenKey) => void;
   onAdvance: () => void;
 }) {
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) =>
+      sortDir === "desc"
+        ? b.screenScore - a.screenScore
+        : a.screenScore - b.screenScore,
+    );
+  }, [rows, sortDir]);
+
+  function toggleSort() {
+    setSortDir((prev) => (prev === "desc" ? "asc" : "desc"));
+  }
+
   return (
     <section className="stage-grid stage-screener">
       <div className="section-sheet">
@@ -211,7 +220,14 @@ function PortfolioScreen({
         </div>
 
         <div className="org-list">
-          {rows.map((row) => {
+          <div className="org-list-header">
+            <span>Organization</span>
+            <span>Key metrics</span>
+            <button className="sort-toggle" onClick={toggleSort} aria-label="Sort by score">
+              Score {sortDir === "desc" ? "\u2193" : "\u2191"}
+            </button>
+          </div>
+          {sortedRows.map((row) => {
             const active = row.id === selectedRow.id;
 
             return (
@@ -405,15 +421,29 @@ function ScenarioMemoScreen({
   row,
   detail,
   scenario,
-  memoParagraphs,
   onBack,
 }: {
   row: ScreenerRow;
   detail: OrgDetail;
-  scenario: (typeof scenarioResults)[keyof typeof scenarioResults];
-  memoParagraphs: string[];
+  scenario: ScenarioResult;
   onBack: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<CopilotTab>("why-flagged");
+
+  const copilotOutputs = useMemo(() => ({
+    "why-flagged": buildWhyFlagged(row, detail),
+    trend: buildTrendNarrative(row, detail),
+    intervention: buildBestIntervention(row, scenario),
+    memo: buildAdvisorMemo(row, detail, scenario),
+  }), [row, detail, scenario]);
+
+  const tabMeta: Array<{ key: CopilotTab; label: string; description: string }> = [
+    { key: "why-flagged", label: "Why Flagged", description: "Why this organization was flagged at its current risk band" },
+    { key: "trend", label: "Trend Analysis", description: "Revenue trajectory and peer benchmark comparison" },
+    { key: "intervention", label: "Best Intervention", description: "Recommended action based on scenario evidence" },
+    { key: "memo", label: "Advisor Memo", description: "Narrative memo for advisors and judges" },
+  ];
+
   return (
     <section className="stage-grid stage-scenario">
       <div className="scenario-pane">
@@ -451,13 +481,37 @@ function ScenarioMemoScreen({
       <div className="memo-sheet">
         <div className="section-head">
           <div>
-            <p className="section-label">Advisor memo</p>
+            <p className="section-label">Copilot insights</p>
             <h3>{row.organizationName}</h3>
             <p className="section-copy">{memoContext.ask}</p>
           </div>
           <button className="action action-tertiary" onClick={onBack}>
             Back to detail
           </button>
+        </div>
+
+        <nav className="copilot-tabs" aria-label="Copilot intent tabs">
+          {tabMeta.map((tab) => (
+            <button
+              key={tab.key}
+              className="copilot-tab"
+              data-active={activeTab === tab.key}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="copilot-output">
+          <p className="copilot-output-description">
+            {tabMeta.find((t) => t.key === activeTab)?.description}
+          </p>
+          <div className="memo-body">
+            {copilotOutputs[activeTab].map((paragraph, idx) => (
+              <p key={idx}>{paragraph}</p>
+            ))}
+          </div>
         </div>
 
         <div className="memo-meta">
@@ -473,12 +527,6 @@ function ScenarioMemoScreen({
             <dt>Mission</dt>
             <dd>{detail.missionArea}</dd>
           </div>
-        </div>
-
-        <div className="memo-body">
-          {memoParagraphs.map((paragraph) => (
-            <p key={paragraph}>{paragraph}</p>
-          ))}
         </div>
 
         <div className="memo-support">
