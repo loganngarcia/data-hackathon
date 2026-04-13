@@ -14,4 +14,11 @@ if [[ -z "${VERCEL_TOKEN:-}" ]]; then
   echo "VERCEL_TOKEN is empty after sourcing .env.local." >&2
   exit 1
 fi
-exec vercel deploy --prod --yes --token "$VERCEL_TOKEN" "$@"
+
+SCOPE="loganngarcias-projects"
+VANITY="nonprofit-ai-data.vercel.app"
+PROD_SLOT="app-sigma-lilac-76.vercel.app"
+
+vercel deploy --prod --yes --token "$VERCEL_TOKEN" "$@"
+# Keep the hackathon vanity URL on the same deployment as the project’s production slot.
+vercel alias set "$PROD_SLOT" "$VANITY" --token "$VERCEL_TOKEN" -S "$SCOPE"
