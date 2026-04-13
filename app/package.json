@@ -9,7 +9,8 @@
     "dev:clean": "rm -rf .next && next dev -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "deploy:vercel": "bash scripts/vercel-deploy.sh"
   },
   "dependencies": {
     "next": "^15.3.1",
