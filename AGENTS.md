@@ -11,7 +11,7 @@ Use these agent instructions to help you win the hackathon.
 
 - The demo app lives in `app/`: **Next.js + TypeScript** (no JavaScript-only source files for app logic; keep `tsconfig` strictness as the project already does).
 - **Deployment target: Vercel.** Prefer `vercel.json` or `vercel.ts` project config and environment variables via Vercel when deploying this frontend.
-- **Agents must deploy after every change to `app/`** (any size). From `app/`: `vercel --prod --yes --scope loganngarcias-projects` (use the linked Vercel account or `VERCEL_TOKEN` if non-interactive). If the vanity URL `nonprofit-ai-data.vercel.app` is used, run `vercel alias set app-sigma-lilac-76.vercel.app nonprofit-ai-data.vercel.app` with the same scope so the alias tracks the latest production deployment.
+- **Agents must deploy after every change to `app/`** (any size). From `app/`: **`npm run deploy:vercel`** (uses `app/.env.local` → `VERCEL_TOKEN`, production deploy, then aliases **`https://nonprofit-ai-data.vercel.app`** to the new deployment). Do not skip deploy after merging dashboard/API/UI work.
 
 ### Tipping Point dashboard UI (merge-friendly)
 
