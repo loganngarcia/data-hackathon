@@ -1,0 +1,60 @@
+/* Mirrors web.tsx chat markdown chrome — uses theme tokens */
+.chat-markdown-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 16px;
+}
+
+.chat-markdown-table th,
+.chat-markdown-table td {
+  border-bottom: 0.33px solid var(--border-subtle);
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.chat-markdown-table th {
+  font-weight: 600;
+}
+
+.chat-markdown-code-block {
+  background: var(--surface);
+  border: 0.33px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 0.9em;
+  margin: 1em 0;
+  white-space: pre;
+}
+
+.chat-markdown-inline-code {
+  background: var(--border-subtle);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 0.9em;
+  color: var(--semantic-accent);
+}
+
+.chat-markdown-blockquote {
+  border-left: 4px solid var(--semantic-accent);
+  padding-left: 16px;
+  margin: 1em 0;
+  opacity: 0.8;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.chat-markdown-hr {
+  border: 0;
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 1.5em 0;
+}

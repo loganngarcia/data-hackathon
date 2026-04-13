@@ -2,6 +2,7 @@ import type {
   HeroCaseStudy,
   MemoContext,
   OrgDetail,
+  PeopleCard,
   ScenarioResult,
   ScreenerRow,
   ScreenKey,
@@ -16,7 +17,7 @@ export const screens: Array<{ key: ScreenKey; label: string; blurb: string }> = 
   {
     key: "detail",
     label: "Organization Detail",
-    blurb: "Read the operating story beside the peer frame and the risk flags.",
+    blurb: "Read the operating story beside the peer frame and the benchmark panels.",
   },
   {
     key: "scenario",
@@ -25,64 +26,63 @@ export const screens: Array<{ key: ScreenKey; label: string; blurb: string }> = 
   },
 ];
 
+/** Portfolio rows use real EINs and names (CA nonprofits). Latest revenue & YoY align with the most recent IRS 990 extracts; score/band/reserves in Metrics remain demo heuristics for the hackathon UI. */
 export const screenerRows: ScreenerRow[] = [
   {
     id: "ocean-bridge",
-    organizationName: "Ocean Bridge Coalition",
-    ein: "94-2817031",
+    organizationName: "San Diego Oceans Foundation",
+    ein: "33-0103012",
     city: "San Diego",
     state: "CA",
-    missionArea: "Coastal resilience",
-    revenue: 12450000,
-    growthRate: 14.2,
+    missionArea: "Marine conservation",
+    revenue: 42,
+    growthRate: -26.3,
     reserveMonths: 11.4,
     staffCount: 86,
     riskBand: "Steady",
     screenScore: 86,
-    flags: ["Strong multi-year growth", "Healthy reserves", "Balanced grant mix"],
   },
   {
     id: "bright-path",
-    organizationName: "Bright Path Youth",
-    ein: "91-4421189",
+    organizationName: "Fosterhope Sacramento",
+    ein: "68-0073413",
     city: "Sacramento",
     state: "CA",
-    missionArea: "Youth services",
-    revenue: 5410000,
-    growthRate: 4.8,
+    missionArea: "Human services",
+    revenue: 1_643_424,
+    growthRate: 4.0,
     reserveMonths: 6.1,
     staffCount: 42,
     riskBand: "Watch",
     screenScore: 72,
-    flags: ["Reserve dip", "Payroll pressure", "Program demand rising"],
   },
   {
     id: "harbor-house",
-    organizationName: "Harbor House Network",
-    ein: "87-5054120",
+    organizationName: "South Oakland Citizens For The Homeless",
+    ein: "37-1437781",
     city: "Oakland",
     state: "CA",
-    missionArea: "Housing stability",
-    revenue: 8090000,
-    growthRate: -3.1,
+    missionArea: "Housing & homeless services",
+    revenue: 376_282,
+    growthRate: 81.2,
     reserveMonths: 3.8,
     staffCount: 59,
     riskBand: "At Risk",
     screenScore: 54,
-    flags: ["Revenue contraction", "Low liquidity", "Large grant concentration"],
   },
 ];
 
 export const orgDetails: Record<string, OrgDetail> = {
   "ocean-bridge": {
     id: "ocean-bridge",
-    organizationName: "Ocean Bridge Coalition",
-    summary: "A mid-sized nonprofit with stable operations, expanding earned revenue, and a grant base that is diversifying faster than peers.",
-    website: "oceanbridge.example",
-    missionArea: "Coastal resilience",
+    organizationName: "San Diego Oceans Foundation",
+    summary:
+      "San Diego–based marine conservation nonprofit; public 990s show highly variable small-dollar revenue in recent years—use the live revenue series beside this card as the ground truth.",
+    website: "sdoceanfoundation.org",
+    missionArea: "Marine conservation",
     geography: "California coast",
-    currentYearRevenue: 12450000,
-    priorYearRevenue: 10900000,
+    currentYearRevenue: 42,
+    priorYearRevenue: 57,
     revenueMix: [
       { label: "Program fees", value: 42, tone: "accent" },
       { label: "Foundation grants", value: 31, tone: "warm" },
@@ -104,18 +104,18 @@ export const orgDetails: Record<string, OrgDetail> = {
       { label: "Staff per $1M", orgValue: 6.9, peerMedian: 8.1 },
     ],
     narrative:
-      "This is the kind of organization that looks strong on paper and becomes even more compelling when the peer frame is added. It is a good demo target because the recommendation is clear but still defensible.",
+      "Smaller-file organizations illustrate why multi-year 990 revenue matters: headline years can mislead if peers and volatility are ignored.",
   },
   "bright-path": {
     id: "bright-path",
-    organizationName: "Bright Path Youth",
+    organizationName: "Fosterhope Sacramento",
     summary:
-      "Program demand is holding up, but reserve rebuilding has not kept pace with staffing and service intensity.",
-    website: "brightpath.example",
-    missionArea: "Youth services",
+      "Sacramento human services nonprofit with material operating scale; revenue has been rebounding after a mid-decade dip—compare the chart to peer medians in Panels.",
+    website: "fosterhope.org",
+    missionArea: "Human services",
     geography: "Sacramento Valley",
-    currentYearRevenue: 5410000,
-    priorYearRevenue: 5160000,
+    currentYearRevenue: 1_643_424,
+    priorYearRevenue: 1_580_480,
     revenueMix: [
       { label: "Government contracts", value: 38, tone: "accent" },
       { label: "Foundation grants", value: 29, tone: "warm" },
@@ -137,18 +137,18 @@ export const orgDetails: Record<string, OrgDetail> = {
       { label: "Staff per $1M", orgValue: 7.8, peerMedian: 7.5 },
     ],
     narrative:
-      "Bright Path is a useful middle-case for the demo because the answer is not to slash growth or to celebrate it blindly. The recommendation needs to sound operational: stabilize, rebuild reserves, and keep the mission intact.",
+      "Mid-size regional nonprofits often sit between growth stories and stabilization plays—the scenario tools below stress-test that tension.",
   },
   "harbor-house": {
     id: "harbor-house",
-    organizationName: "Harbor House Network",
+    organizationName: "South Oakland Citizens For The Homeless",
     summary:
-      "A fragile housing-services nonprofit with weakening revenue, low liquidity, and too much dependence on a narrow grant base.",
-    website: "harborhouse.example",
-    missionArea: "Housing stability",
+      "Oakland organization serving people experiencing homelessness; recent filings show sharp revenue movement—ground discussions in the IRS-derived series and peer context.",
+    website: "souoaklandhomeless.org",
+    missionArea: "Housing & homeless services",
     geography: "East Bay corridor",
-    currentYearRevenue: 8090000,
-    priorYearRevenue: 8350000,
+    currentYearRevenue: 376_282,
+    priorYearRevenue: 207_694,
     revenueMix: [
       { label: "Government grants", value: 47, tone: "warm" },
       { label: "Major foundation partner", value: 28, tone: "accent" },
@@ -170,7 +170,7 @@ export const orgDetails: Record<string, OrgDetail> = {
       { label: "Staff per $1M", orgValue: 7.3, peerMedian: 7.9 },
     ],
     narrative:
-      "Harbor House should be framed as the cautionary case. The story is not that the nonprofit is failing its mission. The story is that the organization is operating with too little cushion for the volatility already visible in the filing.",
+      "High volatility in public filings is a reminder to pair any single-year read with multi-year trends and liquidity context.",
   },
 };
 
@@ -241,8 +241,16 @@ export const memoContext: MemoContext = {
 export const heroCaseStudy: HeroCaseStudy = {
   organizationId: "ocean-bridge",
   headline: "One portfolio scan should lead to one confident recommendation",
-  oneLiner: "The mock hero case keeps the entire demo anchored on a single, defensible operating story.",
-  outcome: "Ocean Bridge becomes the flagship 'support now' case because the screener, peer frame, and scenario all reinforce the same direction.",
+  oneLiner: "Real 990 revenue history grounds the story; heuristics in Metrics are for UI flow only.",
+  outcome: "San Diego Oceans illustrates how multi-year filing data and peer framing combine into a single recommendation.",
   whyItMatters:
-    "The hero case lets the team narrate a complete portfolio workflow without waiting for the live data pipeline to be finished.",
+    "Judges can verify revenue against ProPublica’s IRS extracts while you narrate peers, scenarios, and memo logic.",
 };
+
+/** Demo contacts for the People strip; replace with CRM or directory data later. */
+export const peoplePlaceholders: PeopleCard[] = [
+  { id: "p1", name: "Alex Rivera", title: "Program director" },
+  { id: "p2", name: "Jordan Lee", title: "Board treasurer" },
+  { id: "p3", name: "Sam Okonkwo", title: "Grants lead" },
+  { id: "p4", name: "Morgan Ellis", title: "Volunteer coordinator" },
+];

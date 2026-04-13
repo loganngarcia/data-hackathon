@@ -13,7 +13,6 @@ export interface ScreenerRowContract {
   staffCount: number;
   riskBand: RiskBand;
   screenScore: number;
-  flags: string[];
 }
 
 export interface OrgDetailContract {
@@ -74,7 +73,6 @@ export const hackathonContracts = {
       "staffCount",
       "riskBand",
       "screenScore",
-      "flags",
     ],
   },
   orgDetail: {

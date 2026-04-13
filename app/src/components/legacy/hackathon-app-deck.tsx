@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { startTransition, useState } from "react";
 import {
   heroCaseStudy,
@@ -9,28 +10,12 @@ import {
   screenerRows,
   screens,
 } from "@/lib/mock-data";
+import {
+  formatBenchmarkValue,
+  formatCompactCurrency,
+  formatSignedPercent,
+} from "@/lib/format-display";
 import type { OrgDetail, ScreenKey, ScreenerRow } from "@/lib/types";
-
-function formatCompactCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function formatSignedPercent(value: number) {
-  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
-}
-
-function formatBenchmarkValue(label: string, value: number) {
-  if (label.includes("%")) {
-    return `${value.toFixed(1)}%`;
-  }
-
-  return value.toFixed(1);
-}
 
 function barWidth(value: number, max = 100) {
   return `${Math.max(8, Math.round((value / max) * 100))}%`;
@@ -48,7 +33,8 @@ function buildMemoParagraphs(
   ];
 }
 
-export function HackathonApp() {
+/** Original three-screen editorial deck — kept as backup; primary UI is the mosaic dashboard at `/`. */
+export function HackathonAppDeck() {
   const [screen, setScreen] = useState<ScreenKey>("screener");
   const [selectedOrgId, setSelectedOrgId] = useState(screenerRows[0].id);
 
@@ -77,6 +63,11 @@ export function HackathonApp() {
           <h1>Tipping Point</h1>
           <p className="rail-copy">
             Nonprofit resilience triage for funders, advisors, and a five-minute judge walkthrough.
+          </p>
+          <p className="rail-copy" style={{ marginTop: 14 }}>
+            <Link href="/" style={{ color: "var(--accent)", fontWeight: 600 }}>
+              ← Main dashboard (mosaic UI)
+            </Link>
           </p>
         </div>
 
@@ -260,12 +251,6 @@ function PortfolioScreen({
           <span>{selectedRow.riskBand}</span>
           <strong>{selectedRow.screenScore}</strong>
         </div>
-
-        <ul className="signal-list">
-          {selectedRow.flags.map((flag) => (
-            <li key={flag}>{flag}</li>
-          ))}
-        </ul>
 
         <div className="focus-footer">
           <p className="section-label">Next move</p>

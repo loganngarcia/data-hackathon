@@ -1,0 +1,6 @@
+@import "./theme.css";
+@import "./global.css";
+
+.dashboard-app-root {
+  --font-ui: var(--font-dashboard-ui), "Inter", system-ui, sans-serif;
+}

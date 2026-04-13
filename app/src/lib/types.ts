@@ -15,7 +15,6 @@ export interface ScreenerRow {
   staffCount: number;
   riskBand: RiskBand;
   screenScore: number;
-  flags: string[];
 }
 
 export interface OrgDetail {
@@ -43,6 +42,12 @@ export interface ScenarioResult {
   riskShift: string;
   recommendation: string;
   evidence: string[];
+}
+
+export interface PeopleCard {
+  id: string;
+  name: string;
+  title: string;
 }
 
 export interface MemoContext {

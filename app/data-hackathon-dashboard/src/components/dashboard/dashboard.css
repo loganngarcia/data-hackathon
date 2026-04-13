@@ -1,0 +1,175 @@
+/* Homepage-aligned skeleton pulse — web.tsx JobSkeleton */
+@keyframes homepageSkeleton {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.hp-sk {
+  background: var(--hover-default);
+  border-radius: 10px;
+  animation: homepageSkeleton 1.4s ease-in-out infinite;
+}
+
+.hp-dash {
+  width: 100%;
+  max-width: 816px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 48px 24px 148px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  align-self: stretch;
+  gap: 48px;
+}
+
+@media (max-width: 767px) {
+  .hp-dash {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-top: 0;
+    padding-left: 16px;
+    padding-right: 16px;
+    gap: 48px;
+  }
+}
+
+/* Matches web.tsx section labels (e.g. “Your chats”, settings field labels): 14 / 400 / secondary */
+.hp-sec-title {
+  align-self: stretch;
+  text-align: left;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-family: Inter, sans-serif;
+  font-weight: 400;
+  line-height: 19.32px;
+  margin: 0;
+  word-wrap: break-word;
+}
+
+.hp-sec {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .hp-sec {
+    gap: 12px;
+  }
+}
+
+/* Section 2 style: big + stacked column */
+.hp-split {
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.hp-split > .hp-card-big-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.hp-split-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .hp-split {
+    flex-direction: column;
+  }
+}
+
+/* Three equal big cards */
+.hp-thirds {
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.hp-thirds > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .hp-thirds {
+    flex-direction: column;
+  }
+}
+
+.hp-stack {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hp-map-grid {
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .hp-map-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hp-banner {
+  align-self: stretch;
+  min-height: 140px;
+}
+
+/* Three Highlights rows; each matches the former single Highlight banner height */
+.hp-highlights > * {
+  align-self: stretch;
+  min-height: 160px;
+}
+
+.hp-mosaic {
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 12px;
+  min-height: 320px;
+}
+
+.hp-mosaic-tall {
+  grid-row: span 2;
+  height: 100%;
+  min-height: 280px;
+}
+
+.hp-mosaic .hp-card-big.hp-mosaic-tall {
+  height: 100%;
+}
+
+@media (max-width: 767px) {
+  .hp-mosaic {
+    grid-template-columns: 1fr;
+  }
+  .hp-mosaic-tall {
+    grid-row: auto;
+  }
+}

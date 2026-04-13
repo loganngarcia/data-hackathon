@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { Fraunces, Manrope } from "next/font/google";
+import { Fraunces, Inter, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
+import { DevRootExtras } from "@/components/dev/dev-root-extras";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -15,6 +16,12 @@ const fraunces = Fraunces({
   display: "swap",
 });
 
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-dashboard-ui",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Tipping Point | Aggies Data Hackathon 2026",
   description: "Editorial three-screen demo for nonprofit resilience triage, decision review, and scenario memoing.",
@@ -25,9 +32,17 @@ export default function RootLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
+  const bodyClass = `${manrope.variable} ${fraunces.variable} ${inter.variable}`;
+
   return (
     <html lang="en">
-      <body className={`${manrope.variable} ${fraunces.variable}`}>{children}</body>
+      <body className={bodyClass}>
+        {process.env.NODE_ENV === "development" ? (
+          <DevRootExtras>{children}</DevRootExtras>
+        ) : (
+          children
+        )}
+      </body>
     </html>
   );
 }
