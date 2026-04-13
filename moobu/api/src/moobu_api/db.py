@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 
 import duckdb
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parents[3] / "data" / "moobu.duckdb"
+_env_db = os.environ.get("MOOBU_DB_PATH")
+DEFAULT_DB_PATH = Path(_env_db) if _env_db else Path(__file__).resolve().parents[3] / "data" / "moobu.duckdb"
 
 _connection: duckdb.DuckDBPyConnection | None = None
 _lock = threading.Lock()

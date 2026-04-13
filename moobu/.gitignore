@@ -6,11 +6,11 @@ __pycache__/
 dist/
 build/
 
-# Data (too large for git)
+# Data (raw files too large for git)
 data/raw/
 data/processed/
-data/*.duckdb
 data/*.parquet
+# data/moobu.duckdb is tracked (8.3MB, pre-computed for deploy)
 
 # Node
 web/node_modules/
