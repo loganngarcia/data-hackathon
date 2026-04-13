@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from .db import get_db, init_tables
-from .parser import parse_990_xml
+from .parser import parse_990_xml, parse_officers
 from .schema import FILING_COLUMNS
 
 DEFAULT_RAW_DIR = Path(__file__).resolve().parents[3] / "data" / "raw"
@@ -94,6 +94,32 @@ def ingest_all(raw_dir: Path | None = None, db_path: Path | None = None) -> dict
         "unique_orgs": unique_eins,
     }
     print(f"Loaded {count} records into DuckDB ({unique_eins} unique orgs)")
+
+    # --- Officers/Directors ---
+    print("Parsing officers/directors...")
+    all_officers: list[dict] = []
+    for i, filepath in enumerate(xml_files):
+        if (i + 1) % 2000 == 0:
+            print(f"  Officers {i + 1}/{len(xml_files)}...")
+        try:
+            officers = parse_officers(filepath)
+            all_officers.extend(officers)
+        except Exception:
+            pass
+
+    if all_officers:
+        officers_df = pd.DataFrame(all_officers)
+        officers_df = officers_df.drop_duplicates(
+            subset=["ein", "person_name", "filing_year"], keep="first"
+        )
+        db.execute("DELETE FROM org_people")
+        db.execute("INSERT INTO org_people SELECT * FROM officers_df")
+        people_count = db.execute("SELECT COUNT(*) FROM org_people").fetchone()[0]
+        print(f"Loaded {people_count} officers/directors")
+        summary["people"] = people_count
+    else:
+        summary["people"] = 0
+
     return summary
 
 

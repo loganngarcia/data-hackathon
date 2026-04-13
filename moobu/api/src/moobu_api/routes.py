@@ -12,6 +12,7 @@ from .models import (
     MetricBreakdown,
     NonprofitProfile,
     NonprofitSummary,
+    OrgPerson,
     OverviewStats,
     PaginatedNonprofits,
     PeerComparison,
@@ -72,9 +73,16 @@ def list_nonprofits(
             s.ein, s.org_name, s.state, s.composite_score, s.tier,
             s.latest_total_revenue, s.latest_total_expenses, s.latest_net_assets,
             s.years_of_data,
-            w.vulnerability_score
+            w.vulnerability_score,
+            m.mission_description
         FROM org_scores s
         LEFT JOIN early_warnings w ON s.ein = w.ein
+        LEFT JOIN (
+            SELECT ein, mission_description
+            FROM filings
+            WHERE mission_description IS NOT NULL
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY ein ORDER BY tax_year DESC) = 1
+        ) m ON s.ein = m.ein
         WHERE {where}
         ORDER BY {sort_by} {direction} NULLS LAST
         LIMIT {page_size} OFFSET {offset}
@@ -86,6 +94,7 @@ def list_nonprofits(
             ein=r[0], org_name=r[1], state=r[2], composite_score=r[3],
             tier=r[4], latest_total_revenue=r[5], latest_total_expenses=r[6],
             latest_net_assets=r[7], years_of_data=r[8], vulnerability_score=r[9],
+            mission_description=r[10],
         )
         for r in rows
     ]
@@ -133,6 +142,36 @@ def get_nonprofit(ein: str):
         factors = json.loads(warning[1]) if warning[1] else []
         rec = warning[2]
 
+    # Get profile fields from latest filing
+    profile_row = query(
+        """SELECT mission_description, website, formation_year, employee_count, volunteer_count
+           FROM filings WHERE ein = $1 AND mission_description IS NOT NULL
+           ORDER BY tax_year DESC LIMIT 1""",
+        [ein],
+    ).fetchone()
+
+    mission = profile_row[0] if profile_row else None
+    website = profile_row[1] if profile_row else None
+    formation_yr = profile_row[2] if profile_row else None
+    emp_count = profile_row[3] if profile_row else None
+    vol_count = profile_row[4] if profile_row else None
+
+    # Get people
+    people_rows = query(
+        """SELECT person_name, title, avg_hours_per_week, compensation, is_officer, is_director
+           FROM org_people WHERE ein = $1
+           ORDER BY compensation DESC NULLS LAST, is_officer DESC""",
+        [ein],
+    ).fetchall()
+
+    people = [
+        OrgPerson(
+            person_name=r[0], title=r[1], avg_hours_per_week=r[2],
+            compensation=r[3], is_officer=r[4], is_director=r[5],
+        )
+        for r in people_rows
+    ]
+
     return NonprofitProfile(
         ein=score_dict["ein"],
         org_name=score_dict["org_name"],
@@ -155,6 +194,12 @@ def get_nonprofit(ein: str):
         vulnerability_score=vuln_score,
         warning_factors=factors,
         recommendation=rec,
+        mission_description=mission,
+        website=website,
+        formation_year=formation_yr,
+        employee_count=emp_count,
+        volunteer_count=vol_count,
+        people=people,
     )
 
 

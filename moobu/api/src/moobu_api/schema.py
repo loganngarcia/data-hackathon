@@ -46,6 +46,18 @@ EXPENSE_FIELDS: dict[str, str] = {
     "total_func_expenses": "irs:ReturnData/irs:IRS990/irs:TotalFunctionalExpensesGrp/irs:TotalAmt",
 }
 
+# Profile/org enrichment fields
+PROFILE_FIELDS: dict[str, str] = {
+    "mission_description": "irs:ReturnData/irs:IRS990/irs:ActivityOrMissionDesc",
+    "website": "irs:ReturnData/irs:IRS990/irs:WebsiteAddressTxt",
+    "formation_year": "irs:ReturnData/irs:IRS990/irs:FormationYr",
+    "employee_count": "irs:ReturnData/irs:IRS990/irs:TotalEmployeeCnt",
+    "volunteer_count": "irs:ReturnData/irs:IRS990/irs:TotalVolunteersCnt",
+}
+
+# Officers/directors group XPath
+OFFICERS_XPATH = "irs:ReturnData/irs:IRS990/irs:Form990PartVIISectionAGrp"
+
 # All financial columns in the final filings table
 FILING_COLUMNS = [
     "ein",
@@ -66,4 +78,9 @@ FILING_COLUMNS = [
     "program_expenses",
     "total_func_expenses",
     "source_file",
+    "mission_description",
+    "website",
+    "formation_year",
+    "employee_count",
+    "volunteer_count",
 ]

@@ -5,6 +5,15 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
+class OrgPerson(BaseModel):
+    person_name: str
+    title: str | None
+    avg_hours_per_week: float | None
+    compensation: int | None
+    is_officer: bool | None
+    is_director: bool | None
+
+
 class NonprofitSummary(BaseModel):
     ein: str
     org_name: str | None
@@ -16,6 +25,7 @@ class NonprofitSummary(BaseModel):
     latest_net_assets: int | None
     years_of_data: int | None
     vulnerability_score: float | None = None
+    mission_description: str | None = None
 
 
 class PaginatedNonprofits(BaseModel):
@@ -61,6 +71,12 @@ class NonprofitProfile(BaseModel):
     vulnerability_score: float | None = None
     warning_factors: list[str] | None = None
     recommendation: str | None = None
+    mission_description: str | None = None
+    website: str | None = None
+    formation_year: int | None = None
+    employee_count: int | None = None
+    volunteer_count: int | None = None
+    people: list[OrgPerson] = []
 
 
 class AtRiskOrg(BaseModel):

@@ -1,3 +1,12 @@
+export interface OrgPerson {
+  person_name: string;
+  title: string | null;
+  avg_hours_per_week: number | null;
+  compensation: number | null;
+  is_officer: boolean | null;
+  is_director: boolean | null;
+}
+
 export interface NonprofitSummary {
   ein: string;
   org_name: string | null;
@@ -9,6 +18,7 @@ export interface NonprofitSummary {
   latest_net_assets: number | null;
   years_of_data: number | null;
   vulnerability_score: number | null;
+  mission_description: string | null;
 }
 
 export interface PaginatedNonprofits {
@@ -54,6 +64,12 @@ export interface NonprofitProfile {
   vulnerability_score: number | null;
   warning_factors: string[] | null;
   recommendation: string | null;
+  mission_description: string | null;
+  website: string | null;
+  formation_year: number | null;
+  employee_count: number | null;
+  volunteer_count: number | null;
+  people: OrgPerson[];
 }
 
 export interface AtRiskOrg {

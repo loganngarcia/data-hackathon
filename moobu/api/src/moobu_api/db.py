@@ -70,6 +70,11 @@ def init_tables(db: duckdb.DuckDBPyConnection) -> None:
             program_expenses BIGINT,
             total_func_expenses BIGINT,
             source_file VARCHAR,
+            mission_description VARCHAR,
+            website VARCHAR,
+            formation_year INTEGER,
+            employee_count INTEGER,
+            volunteer_count INTEGER,
             PRIMARY KEY (ein, tax_year)
         )
     """)
@@ -116,5 +121,18 @@ def init_tables(db: duckdb.DuckDBPyConnection) -> None:
             pre_crisis_revenue BIGINT,
             crisis_revenue BIGINT,
             PRIMARY KEY (ein, crisis_year)
+        )
+    """)
+
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS org_people (
+            ein VARCHAR NOT NULL,
+            person_name VARCHAR NOT NULL,
+            title VARCHAR,
+            avg_hours_per_week DOUBLE,
+            compensation BIGINT,
+            is_officer BOOLEAN,
+            is_director BOOLEAN,
+            filing_year INTEGER
         )
     """)

@@ -55,3 +55,31 @@ export function tierColor(tier: string | null | undefined): string {
       return "#6B7280";
   }
 }
+
+export function truncateMission(text: string | null, maxLen = 120): string {
+  if (!text) return "No mission description available.";
+  if (text.length <= maxLen) return text;
+  const truncated = text.slice(0, maxLen);
+  const lastSpace = truncated.lastIndexOf(" ");
+  return (lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated) + "...";
+}
+
+const AVATAR_PALETTE = [
+  "#3B69B7", "#16A34A", "#F5A623", "#DC2626",
+  "#8B5CF6", "#0891B2", "#DB2777", "#65A30D",
+];
+
+export function avatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
+}
+
+export function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}

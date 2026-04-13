@@ -10,6 +10,8 @@
   --card-bg: #ffffff;
   --border: #E5E7EB;
   --muted: #6B7280;
+  --shadow-card: 0 1px 3px rgba(59, 105, 183, 0.06), 0 4px 16px rgba(59, 105, 183, 0.04);
+  --shadow-card-hover: 0 4px 12px rgba(59, 105, 183, 0.1), 0 8px 32px rgba(59, 105, 183, 0.06);
 }
 
 @theme inline {
@@ -41,8 +43,211 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Score tier badge colors */
+/* ========== Glass Card ========== */
+.glass-card {
+  background: var(--card-bg);
+  box-shadow: var(--shadow-card);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.glass-card:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+}
+
+/* ========== Tier Strip (3px gradient bar at card top) ========== */
+.tier-strip {
+  height: 3px;
+  border-radius: 16px 16px 0 0;
+  width: 100%;
+}
+.tier-strip-thriving { background: linear-gradient(90deg, #16A34A, #4ADE80); }
+.tier-strip-stable { background: linear-gradient(90deg, #3B69B7, #60A5FA); }
+.tier-strip-needs-support { background: linear-gradient(90deg, #F5A623, #FBBF24); }
+.tier-strip-urgent { background: linear-gradient(90deg, #DC2626, #F87171); }
+
+/* ========== Tier Badge (enhanced pill) ========== */
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.tier-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Legacy tier badge classes (for backwards compat) */
 .tier-thriving { background: #DCFCE7; color: #166534; }
 .tier-stable { background: #E8EEF7; color: #1E3A6E; }
 .tier-needs-support { background: #FEF3E2; color: #92400E; }
 .tier-urgent { background: #FEE2E2; color: #991B1B; }
+
+/* ========== Score Ring ========== */
+.score-ring {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ========== Staggered Fade-In Animation ========== */
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-card-in {
+  animation: fadeSlideIn 0.4s ease-out both;
+}
+
+/* ========== Avatar Circle ========== */
+.avatar-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  user-select: none;
+}
+
+/* ========== Person Badges ========== */
+.person-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.person-badge-officer {
+  background: #E8EEF7;
+  color: #1E3A6E;
+}
+
+.person-badge-director {
+  background: #DCFCE7;
+  color: #166534;
+}
+
+/* ========== Metric Bar ========== */
+.metric-bar-track {
+  height: 8px;
+  background: #F3F4F6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.metric-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease-out;
+}
+
+/* ========== Tab Button ========== */
+.tab-btn {
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.tab-btn:hover {
+  color: var(--foreground);
+}
+
+.tab-btn-active {
+  color: var(--moobu-blue);
+  border-bottom-color: var(--moobu-blue);
+}
+
+/* ========== Alert Card (risk warnings) ========== */
+.alert-card {
+  background: var(--moobu-orange-light);
+  border: 1px solid rgba(245, 166, 35, 0.25);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.alert-card-urgent {
+  background: #FEE2E2;
+  border-color: rgba(220, 38, 38, 0.25);
+}
+
+/* ========== Detail Pill ========== */
+.detail-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: #F3F4F6;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ========== Risk border accent ========== */
+.risk-border-high {
+  border-left: 3px solid #DC2626;
+}
+
+/* ========== Callout Box ========== */
+.callout-box {
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+/* ========== Nav Shadow ========== */
+.nav-shadow {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(59, 105, 183, 0.03);
+}
+
+/* ========== Nav Link Active ========== */
+.nav-link-active {
+  color: var(--moobu-blue);
+  font-weight: 600;
+  position: relative;
+}
+
+.nav-link-active::after {
+  content: '';
+  position: absolute;
+  bottom: -12px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--moobu-blue);
+  border-radius: 1px;
+}
