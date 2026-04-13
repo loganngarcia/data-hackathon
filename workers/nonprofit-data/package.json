@@ -1,0 +1,31 @@
+{
+  "name": "nonprofit-data-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker: ProPublica 990 cache (D1) for Tipping Point",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create nonprofit-990",
+    "db:migrate": "wrangler d1 execute nonprofit-990 --file=schema.sql",
+    "db:migrate:remote": "wrangler d1 execute nonprofit-990 --file=schema.sql --remote",
+    "db:migrate:irs": "wrangler d1 execute nonprofit-990 --file=schema-irs-registry.sql",
+    "db:migrate:irs:remote": "wrangler d1 execute nonprofit-990 --file=schema-irs-registry.sql --remote",
+    "db:migrate:filings-raw": "wrangler d1 execute nonprofit-990 --file=schema-irs-filings-raw.sql",
+    "db:migrate:filings-raw:remote": "wrangler d1 execute nonprofit-990 --file=schema-irs-filings-raw.sql --remote",
+    "db:migrate:irs990-xml": "wrangler d1 execute nonprofit-990 --file=schema-irs990-xml.sql",
+    "db:migrate:irs990-xml:remote": "wrangler d1 execute nonprofit-990 --file=schema-irs990-xml.sql --remote",
+    "db:migrate:irs990-xml-v2:alter": "wrangler d1 execute nonprofit-990 --file=schema-irs990-xml-alter-v2.sql",
+    "db:migrate:irs990-xml-v2:alter:remote": "wrangler d1 execute nonprofit-990 --file=schema-irs990-xml-alter-v2.sql --remote",
+    "irs:index": "node scripts/fetch-irs-index.mjs",
+    "irs:parse-xml": "node scripts/parse-irs990-xml.mjs",
+    "sync": "curl -X POST https://nonprofit-data.logangarcia.workers.dev/api/sync -H \"X-Admin-Key: $ADMIN_KEY\""
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "csv-parse": "^5.6.0",
+    "fast-xml-parser": "^4.5.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.0.0"
+  }
+}

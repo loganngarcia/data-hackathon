@@ -1,20 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  memoContext,
-  orgDetails,
-  peoplePlaceholders,
-  scenarioResults,
-  screenerRows,
-  screens,
-} from "@/lib/mock-data";
-import { formatBenchmarkValue, formatSignedPercent } from "@/lib/format-display";
-import type { OrgDetail } from "@/lib/types";
+  startTransition,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { filterPortfolioByBucket, type PortfolioBucket } from "@/lib/portfolio-buckets";
+import { buildPeerBenchmarks, staffPerMillion } from "@/lib/peer-benchmarks";
+import {
+  formatBenchmarkValue,
+  formatReserveCoverage,
+  formatSignedPercent,
+  screenScoreToneClasses,
+} from "@/lib/format-display";
+import type { OrgDetail, ScreenerRow } from "@/lib/types";
+import {
+  METRICS_COMPARE_MEDIAN,
+  MetricsComparePeerPicker,
+} from "./metrics-compare-peer-picker";
 import { OrgLogoAvatar } from "./org-logo-avatar";
-import { PortfolioOrgChip } from "./portfolio-org-chip";
+import { PortfolioHomeFilter } from "./portfolio-home-filter";
 import { RevenueHistoryChart } from "./revenue-history-chart";
+import { buildLiveOrgDetail, EM_DASH } from "./tipping-point-live-detail";
 
 const MOSAIC_GAP_PX = 12;
 /** Each metric tile is at least this on desktop when the 2×2 block fits. */
@@ -24,9 +35,51 @@ const METRICS_BLOCK_MIN_SIDE_PX = METRIC_TILE_MIN_PX * 2 + MOSAIC_GAP_PX;
 /** Reserve at least this width for the org card; metrics block sits in the `auto` column. */
 const MOSAIC_MIN_MAIN_COL_PX = 260;
 const MOBILE_MQ = "(max-width: 767px)";
+const SIMILAR_ORG_MAX = 6;
+const PORTFOLIO_PAGE_SIZE = 20;
+
+function PortfolioRowSkeleton() {
+  return (
+    <div className="tp-portfolio-list-skeleton" aria-hidden>
+      <div className="hp-sk tp-portfolio-list-skeleton-avatar" />
+      <div className="tp-portfolio-list-skeleton-text">
+        <div className="hp-sk tp-portfolio-list-skeleton-line tp-portfolio-list-skeleton-line--lg" />
+        <div className="hp-sk tp-portfolio-list-skeleton-line tp-portfolio-list-skeleton-line--sm" />
+      </div>
+      <div className="hp-sk tp-portfolio-list-skeleton-score" />
+    </div>
+  );
+}
+
+function ChevronLeftIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path
+        d="M14 6L8 12L14 18"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export function TippingPointDashboard({ embedded = false }: { embedded?: boolean }) {
-  const [selectedOrgId, setSelectedOrgId] = useState(screenerRows[0].id);
+  /** `home` = org list; `detail` = full org view (former single-page dashboard). */
+  const [view, setView] = useState<"home" | "detail">("home");
+  const [portfolioRows, setPortfolioRows] = useState<ScreenerRow[]>([]);
+  const [portfolioReady, setPortfolioReady] = useState(false);
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
+  const [portfolioHasMore, setPortfolioHasMore] = useState(false);
+  const [portfolioPage, setPortfolioPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [revenueByOrg, setRevenueByOrg] = useState<
+    Record<string, { currentYearRevenue: number; priorYearRevenue: number }> | null
+  >(null);
+  const [portfolioBucket, setPortfolioBucket] = useState<PortfolioBucket>("all");
+
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const mosaicRef = useRef<HTMLDivElement>(null);
   const orgCardRef = useRef<HTMLDivElement>(null);
   const orgInnerRef = useRef<HTMLDivElement>(null);
@@ -34,21 +87,204 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
   const [mosaicLayout, setMosaicLayout] = useState<
     { metricsSide: number; rowMinHeight: number } | undefined
   >(undefined);
+  const [metricsComparePeerId, setMetricsComparePeerId] = useState<string>(METRICS_COMPARE_MEDIAN);
+  const metricsCompareInitRef = useRef(false);
+  const portfolioPageRef = useRef(1);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreInFlightRef = useRef(false);
 
-  const selectedRow = useMemo(
-    () => screenerRows.find((r) => r.id === selectedOrgId) ?? screenerRows[0],
-    [selectedOrgId],
+  useEffect(() => {
+    portfolioPageRef.current = portfolioPage;
+  }, [portfolioPage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPortfolioError(null);
+    fetch(`/api/portfolio-data?page=1&pageSize=${PORTFOLIO_PAGE_SIZE}`)
+      .then(async (res) => {
+        const body = (await res.json().catch(() => ({}))) as {
+          screener?: ScreenerRow[];
+          revenueByOrg?: Record<string, { currentYearRevenue: number; priorYearRevenue: number }>;
+          hasMore?: boolean;
+          error?: string;
+        };
+        if (!res.ok) {
+          throw new Error(typeof body.error === "string" ? body.error : `HTTP ${res.status}`);
+        }
+        return body;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setPortfolioReady(true);
+        setPortfolioPage(1);
+        portfolioPageRef.current = 1;
+        setPortfolioHasMore(Boolean(data.hasMore));
+        if (data.screener?.length) {
+          setPortfolioRows(data.screener);
+          setRevenueByOrg(data.revenueByOrg ?? {});
+          setPortfolioError(null);
+        } else {
+          setPortfolioRows([]);
+          setRevenueByOrg(null);
+          setPortfolioError("No organizations returned from the data API.");
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setPortfolioReady(true);
+          setPortfolioHasMore(false);
+          setPortfolioRows([]);
+          setRevenueByOrg(null);
+          setPortfolioError(e instanceof Error ? e.message : "Could not load portfolio.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!portfolioReady || !portfolioHasMore || loadingMore) return;
+    const el = loadMoreSentinelRef.current;
+    if (!el) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const hit = entries[0]?.isIntersecting;
+        if (!hit || loadMoreInFlightRef.current) return;
+        const nextPage = portfolioPageRef.current + 1;
+        loadMoreInFlightRef.current = true;
+        setLoadingMore(true);
+        fetch(`/api/portfolio-data?page=${nextPage}&pageSize=${PORTFOLIO_PAGE_SIZE}`)
+          .then(async (res) => {
+            const body = (await res.json().catch(() => ({}))) as {
+              screener?: ScreenerRow[];
+              revenueByOrg?: Record<string, { currentYearRevenue: number; priorYearRevenue: number }>;
+              hasMore?: boolean;
+            };
+            if (!res.ok) return;
+            return body;
+          })
+          .then((data) => {
+            if (!data) return;
+            setPortfolioRows((prev) => {
+              const seen = new Set(prev.map((r) => r.id));
+              const add = (data.screener ?? []).filter((r) => !seen.has(r.id));
+              return [...prev, ...add];
+            });
+            setRevenueByOrg((prev) => ({ ...(prev ?? {}), ...(data.revenueByOrg ?? {}) }));
+            setPortfolioHasMore(Boolean(data.hasMore));
+            setPortfolioPage(nextPage);
+            portfolioPageRef.current = nextPage;
+          })
+          .finally(() => {
+            loadMoreInFlightRef.current = false;
+            setLoadingMore(false);
+          });
+      },
+      { root: null, rootMargin: "320px", threshold: 0 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [portfolioReady, portfolioHasMore, loadingMore, portfolioRows.length]);
+
+  useEffect(() => {
+    if (view === "detail" && portfolioReady && portfolioRows.length === 0) {
+      startTransition(() => setView("home"));
+    }
+  }, [view, portfolioReady, portfolioRows.length]);
+
+  const homeListRows = useMemo(
+    () => filterPortfolioByBucket(portfolioRows, portfolioBucket),
+    [portfolioRows, portfolioBucket],
   );
-  const detail: OrgDetail = orgDetails[selectedRow.id] ?? orgDetails["ocean-bridge"];
-  const scenario = scenarioResults[selectedRow.id] ?? scenarioResults["ocean-bridge"];
 
-  const benchmarkRows = useMemo(() => detail.peerBenchmarks.slice(0, 4), [detail]);
+  const selectedRow = useMemo((): ScreenerRow | undefined => {
+    if (portfolioRows.length === 0) return undefined;
+    return portfolioRows.find((r) => r.id === selectedOrgId) ?? portfolioRows[0];
+  }, [selectedOrgId, portfolioRows]);
 
-  function selectOrg(id: string) {
-    startTransition(() => setSelectedOrgId(id));
+  const detail: OrgDetail | undefined = useMemo(() => {
+    if (!selectedRow) return undefined;
+    return buildLiveOrgDetail(selectedRow, portfolioRows, revenueByOrg);
+  }, [selectedRow, portfolioRows, revenueByOrg]);
+
+  useEffect(() => {
+    if (portfolioRows.length === 0) return;
+    if (!selectedOrgId || !portfolioRows.some((r) => r.id === selectedOrgId)) {
+      startTransition(() => setSelectedOrgId(portfolioRows[0]!.id));
+    }
+  }, [portfolioRows, selectedOrgId]);
+
+  const benchmarkRows = useMemo(() => detail?.peerBenchmarks.slice(0, 4) ?? [], [detail]);
+
+  const similarOrgRows = useMemo(() => {
+    if (!selectedRow) return [];
+    const state = selectedRow.state;
+    return portfolioRows
+      .filter((r) => r.id !== selectedRow.id && r.state === state)
+      .slice(0, SIMILAR_ORG_MAX);
+  }, [portfolioRows, selectedRow]);
+
+  useEffect(() => {
+    if (!selectedRow) return;
+    const others = portfolioRows.filter((r) => r.id !== selectedRow.id);
+    if (others.length === 0) {
+      setMetricsComparePeerId(METRICS_COMPARE_MEDIAN);
+      return;
+    }
+    setMetricsComparePeerId((prev) => {
+      if (!metricsCompareInitRef.current) {
+        metricsCompareInitRef.current = true;
+        return others[0]!.id;
+      }
+      if (prev === METRICS_COMPARE_MEDIAN) return prev;
+      if (others.some((o) => o.id === prev)) return prev;
+      return others[0]!.id;
+    });
+  }, [portfolioRows, selectedRow]);
+
+  const metricsCompareOptions = useMemo(() => {
+    const out: Array<{ id: string; label: string }> = [
+      { id: METRICS_COMPARE_MEDIAN, label: "Portfolio median" },
+    ];
+    if (!selectedRow) return out;
+    for (const r of portfolioRows) {
+      if (r.id === selectedRow.id) continue;
+      out.push({ id: r.id, label: r.organizationName });
+    }
+    return out;
+  }, [portfolioRows, selectedRow]);
+
+  const panelComparePeerRow = useMemo(() => {
+    if (metricsComparePeerId === METRICS_COMPARE_MEDIAN) return null;
+    return portfolioRows.find((r) => r.id === metricsComparePeerId) ?? null;
+  }, [metricsComparePeerId, portfolioRows]);
+
+  function panelPeerBenchmarkValue(label: string, peerMedianFallback: number): number {
+    if (!panelComparePeerRow) return peerMedianFallback;
+    if (label === "Reserve months") return panelComparePeerRow.reserveMonths;
+    if (label === "Revenue growth %") return panelComparePeerRow.growthRate;
+    if (label === "Staff per $1M") return staffPerMillion(panelComparePeerRow);
+    return peerMedianFallback;
+  }
+
+  function openOrgDetail(id: string) {
+    startTransition(() => {
+      setSelectedOrgId(id);
+      setView("detail");
+    });
+  }
+
+  function backToPortfolio() {
+    startTransition(() => setView("home"));
   }
 
   useLayoutEffect(() => {
+    if (view !== "detail") {
+      setMosaicLayout(undefined);
+      return;
+    }
     const mosaic = mosaicRef.current;
     const card = orgCardRef.current;
     const inner = orgInnerRef.current;
@@ -91,7 +327,7 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
       roMosaic.disconnect();
       mq.removeEventListener("change", sync);
     };
-  }, [selectedOrgId, detail.summary]);
+  }, [view, selectedOrgId, detail?.summary]);
 
   return (
     <div className="tp-dashboard-shell">
@@ -108,16 +344,69 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
       ) : null}
 
       <div className="hp-dash" data-layer="tipping-point-dashboard">
-        <section className="hp-sec tp-overview-sec" aria-label="Portfolio">
-          <div className="tp-overview-head">
-            <PortfolioOrgChip
-              variant="inline"
-              rows={screenerRows}
-              selectedId={selectedOrgId}
-              onSelect={selectOrg}
-            />
-          </div>
-          <div className="hp-mosaic" ref={mosaicRef}>
+        {view === "home" ? (
+          <section className="hp-sec" aria-label="Organizations">
+            <div className="tp-portfolio-home-toolbar">
+              <PortfolioHomeFilter rows={portfolioRows} value={portfolioBucket} onChange={setPortfolioBucket} />
+            </div>
+            <div className="tp-portfolio-home-list">
+              {!portfolioReady ? (
+                <p className="tp-body tp-portfolio-home-empty">Loading portfolio…</p>
+              ) : portfolioRows.length === 0 ? (
+                <p className="tp-body tp-portfolio-home-empty">
+                  {portfolioError ?? EM_DASH}
+                </p>
+              ) : homeListRows.length === 0 ? (
+                <p className="tp-body tp-portfolio-home-empty">No organizations match this filter.</p>
+              ) : (
+                <>
+                  {homeListRows.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="tp-portfolio-list-card"
+                      onClick={() => openOrgDetail(row.id)}
+                    >
+                      <OrgLogoAvatar organizationName={row.organizationName} websiteDomain="" />
+                      <div className="tp-people-text tp-portfolio-list-text">
+                        <p className="tp-people-name">{row.organizationName}</p>
+                        <p className="tp-people-role">
+                          {row.city}, {row.state}
+                        </p>
+                      </div>
+                      <p
+                        className={`tp-metric-value tp-portfolio-list-score ${screenScoreToneClasses(row.screenScore)}`}
+                      >
+                        {row.screenScore}
+                      </p>
+                    </button>
+                  ))}
+                  {loadingMore ? (
+                    <>
+                      <PortfolioRowSkeleton />
+                      <PortfolioRowSkeleton />
+                      <PortfolioRowSkeleton />
+                    </>
+                  ) : null}
+                  {portfolioHasMore && portfolioRows.length > 0 ? (
+                    <div ref={loadMoreSentinelRef} className="tp-portfolio-load-sentinel" aria-hidden />
+                  ) : null}
+                </>
+              )}
+            </div>
+          </section>
+        ) : selectedRow && detail ? (
+          <>
+            <div className="tp-org-detail-stack">
+              <div className="tp-org-detail-toolbar">
+                <button type="button" className="tp-back-button" onClick={backToPortfolio} aria-label="Back to portfolio">
+                  <ChevronLeftIcon />
+                  Back
+                </button>
+              </div>
+
+              <section className="hp-sec tp-overview-sec" aria-label="Organization overview">
+              <div className="hp-mosaic" ref={mosaicRef}>
             <div
               className="tp-card tp-card-big hp-mosaic-tall"
               ref={orgCardRef}
@@ -165,7 +454,9 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
             >
               <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
                 <p className="tp-kicker">Screener score</p>
-                <p className="tp-metric-value">{selectedRow.screenScore}</p>
+                <p className={`tp-metric-value ${screenScoreToneClasses(selectedRow.screenScore)}`}>
+                  {selectedRow.screenScore}
+                </p>
               </div>
               <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
                 <p className="tp-kicker">Risk band</p>
@@ -180,40 +471,76 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
               <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
                 <p className="tp-kicker">Reserve coverage</p>
                 <p className="tp-metric-value" style={{ fontSize: 18 }}>
-                  {selectedRow.reserveMonths.toFixed(1)} mo
+                  {formatReserveCoverage(selectedRow.reserveMonths)}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="tp-revenue-wide">
-            <RevenueHistoryChart ein={selectedRow.ein} />
-          </div>
-        </section>
+              <div className="tp-revenue-wide">
+                <RevenueHistoryChart ein={selectedRow.ein} />
+              </div>
+            </section>
+            </div>
 
-        <section className="hp-sec" aria-label="People">
-          <h2 className="hp-sec-title">People</h2>
-          <p className="tp-people-lede">
-            Demo contacts in the same panel style as below—swap for your CRM or directory.
-          </p>
-          <div className="hp-map-grid">
-            {peoplePlaceholders.map((person) => (
-              <article key={person.id} className="tp-people-card">
-                <div className="tp-people-avatar" aria-hidden />
-                <div className="tp-people-text">
-                  <p className="tp-people-name">{person.name}</p>
-                  <p className="tp-people-role">{person.title}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
+                <section className="hp-sec" aria-label="People">
+              <h2 className="hp-sec-title">People</h2>
+              <p className="tp-people-lede">
+                Leadership and staff contacts are not in the ProPublica 990 extract; connect a CRM or manual
+                directory if you need names here.
+              </p>
+              <div className="hp-map-grid">
+                <article className="tp-people-card">
+                  <div className="tp-people-avatar" aria-hidden />
+                  <div className="tp-people-text">
+                    <p className="tp-people-name">{EM_DASH}</p>
+                    <p className="tp-people-role">{EM_DASH}</p>
+                  </div>
+                </article>
+              </div>
+            </section>
 
-        <section className="hp-sec" aria-label="Panels">
-          <h2 className="hp-sec-title">Panels</h2>
-          <div className="tp-panel-compare">
-            <div className="tp-panel tp-panel-compare-col" aria-label="Organization benchmarks">
-              <p className="tp-panel-compare-heading">Organization</p>
+                <section className="hp-sec" aria-label="Similar organizations">
+              <h2 className="hp-sec-title">Similar organizations</h2>
+              <div className="tp-portfolio-home-list">
+                {similarOrgRows.length === 0 ? (
+                  <p className="tp-body tp-portfolio-home-empty">
+                    No other organizations in this state in the portfolio.
+                  </p>
+                ) : (
+                  similarOrgRows.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="tp-portfolio-list-card"
+                      onClick={() => openOrgDetail(row.id)}
+                    >
+                      <OrgLogoAvatar organizationName={row.organizationName} websiteDomain="" />
+                      <div className="tp-people-text tp-portfolio-list-text">
+                        <p className="tp-people-name">{row.organizationName}</p>
+                        <p className="tp-people-role">
+                          {row.city}, {row.state}
+                        </p>
+                      </div>
+                      <p
+                      className={`tp-metric-value tp-portfolio-list-score ${screenScoreToneClasses(row.screenScore)}`}
+                    >
+                      {row.screenScore}
+                    </p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </section>
+
+                <section className="hp-sec" aria-label="Metrics">
+              <h2 className="hp-sec-title">Metrics</h2>
+              <div className="tp-panel-compare">
+            <div
+              className="tp-panel tp-panel-compare-col"
+              aria-label={`${selectedRow.organizationName} benchmarks`}
+            >
+              <p className="tp-panel-compare-heading">{selectedRow.organizationName}</p>
               {benchmarkRows.map((row) => (
                 <div key={`org-${row.label}`} className="tp-panel-compare-row">
                   <p className="tp-kicker">{row.label}</p>
@@ -223,88 +550,86 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
                 </div>
               ))}
             </div>
-            <div className="tp-panel tp-panel-compare-col" aria-label="Peer median benchmarks">
-              <p className="tp-panel-compare-heading">Peer median</p>
+            <div
+              className="tp-panel tp-panel-compare-col"
+              aria-label={
+                metricsComparePeerId === METRICS_COMPARE_MEDIAN
+                  ? "Portfolio median benchmarks"
+                  : `${panelComparePeerRow?.organizationName ?? "Peer"} benchmarks`
+              }
+            >
+              <MetricsComparePeerPicker
+                options={metricsCompareOptions}
+                value={metricsComparePeerId}
+                onChange={setMetricsComparePeerId}
+              />
               {benchmarkRows.map((row) => (
                 <div key={`peer-${row.label}`} className="tp-panel-compare-row">
                   <p className="tp-kicker">{row.label}</p>
                   <p className="tp-body tp-panel-compare-value">
-                    {formatBenchmarkValue(row.label, row.peerMedian)}
+                    {formatBenchmarkValue(
+                      row.label,
+                      panelPeerBenchmarkValue(row.label, row.peerMedian),
+                    )}
                   </p>
                 </div>
               ))}
-            </div>
-          </div>
-        </section>
+              </div>
+              </div>
+            </section>
 
-        <section className="hp-sec" aria-label="Highlights">
-          <h2 className="hp-sec-title">Highlights</h2>
-          <div className="hp-stack hp-highlights">
-            <div className="tp-card tp-card-big hp-banner">
-              <p className="tp-kicker">Scenario · {scenario.title}</p>
-              <p className="tp-title" style={{ fontSize: 17 }}>
-                {scenario.recommendation}
-              </p>
-              <p className="tp-body">{scenario.assumption}</p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: "auto" }}>
-                <div>
-                  <p className="tp-kicker">Proj. reserve</p>
-                  <p className="tp-metric-value" style={{ fontSize: 18 }}>
-                    {scenario.projectedReserveMonths.toFixed(1)} mo
+                <section className="hp-sec" aria-label="Recommendations">
+              <h2 className="hp-sec-title">Recommendations</h2>
+              <div className="hp-stack hp-highlights">
+                <div className="tp-card tp-card-big hp-banner">
+                  <p className="tp-kicker">Scenario modeling</p>
+                  <p className="tp-title" style={{ fontSize: 17 }}>
+                    {EM_DASH}
                   </p>
-                </div>
-                <div>
-                  <p className="tp-kicker">Proj. growth</p>
-                  <p className="tp-metric-value" style={{ fontSize: 18 }}>
-                    {formatSignedPercent(scenario.projectedGrowth)}
+                  <p className="tp-body">
+                    Not generated from ProPublica data. Add your own assumptions outside this dashboard if you need a
+                    forward scenario.
                   </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: "auto" }}>
+                    <div>
+                      <p className="tp-kicker">Proj. reserve</p>
+                      <p className="tp-metric-value" style={{ fontSize: 18 }}>
+                        {EM_DASH}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="tp-kicker">Proj. growth</p>
+                      <p className="tp-metric-value" style={{ fontSize: 18 }}>
+                        {EM_DASH}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="tp-kicker">Risk shift</p>
+                      <p className="tp-metric-value" style={{ fontSize: 16 }}>
+                        {EM_DASH}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="tp-kicker">Risk shift</p>
-                  <p className="tp-metric-value" style={{ fontSize: 16 }}>
-                    {scenario.riskShift}
+
+                <div className="tp-card tp-card-big hp-banner">
+                  <p className="tp-kicker">Memo / talking points</p>
+                  <p className="tp-title" style={{ fontSize: 17 }}>
+                    {EM_DASH}
+                  </p>
+                  <p className="tp-body">{EM_DASH}</p>
+                </div>
+
+                <div className="tp-card tp-card-big hp-banner">
+                  <p className="tp-kicker">Evidence beyond 990 extracts</p>
+                  <p className="tp-body" style={{ color: "var(--text-primary)" }}>
+                    {EM_DASH}
                   </p>
                 </div>
               </div>
-            </div>
-
-            <div className="tp-card tp-card-big hp-banner">
-              <p className="tp-kicker">Memo brief ({memoContext.timeHorizon})</p>
-              <p className="tp-title" style={{ fontSize: 17 }}>
-                Audience: {memoContext.audience}
-              </p>
-              <p className="tp-body">{memoContext.ask}</p>
-              <ul className="tp-body" style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-                {memoContext.constraints.map((c) => (
-                  <li key={c} style={{ marginBottom: 4 }}>
-                    {c}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="tp-card tp-card-big hp-banner">
-              <p className="tp-kicker">Screen map</p>
-              <p className="tp-body" style={{ color: "var(--text-primary)" }}>
-                {screens.map((s) => (
-                  <span key={s.key} style={{ display: "block", marginBottom: 8 }}>
-                    <strong>{s.label}</strong> — {s.blurb}
-                  </span>
-                ))}
-              </p>
-              <p className="tp-kicker" style={{ marginTop: 12 }}>
-                Evidence anchors
-              </p>
-              <ul className="tp-body" style={{ margin: 0, paddingLeft: 18, color: "var(--text-primary)" }}>
-                {scenario.evidence.map((e) => (
-                  <li key={e} style={{ marginBottom: 4 }}>
-                    {e}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </section>
+            </section>
+          </>
+        ) : null}
 
         {embedded ? (
           <p className="tp-embedded-footer">

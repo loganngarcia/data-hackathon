@@ -1,3 +1,7 @@
+/**
+ * Fixtures for the `/legacy` three-screen deck only.
+ * The main Tipping Point dashboard (`/`) uses live ProPublica / worker data only.
+ */
 import type {
   HeroCaseStudy,
   MemoContext,
@@ -26,7 +30,10 @@ export const screens: Array<{ key: ScreenKey; label: string; blurb: string }> = 
   },
 ];
 
-/** Portfolio rows use real EINs and names (CA nonprofits). Latest revenue & YoY align with the most recent IRS 990 extracts; score/band/reserves in Metrics remain demo heuristics for the hackathon UI. */
+/**
+ * Fallback portfolio when `/api/portfolio-data` is unavailable.
+ * Normal load uses ProPublica + Moobu-style scores from that API.
+ */
 export const screenerRows: ScreenerRow[] = [
   {
     id: "ocean-bridge",

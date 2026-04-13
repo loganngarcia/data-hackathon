@@ -1,6 +1,6 @@
 # Aggies Data Hackathon — frontend (`app/`)
 
-This directory is the **Next.js 15 + TypeScript** demo for **Tipping Point**. The **main experience** (`/`) ports the **`data-hackathon-dashboard` shell**: left sidebar (chats, search, new chat, You), bottom **chat composer**, `?settings` profile sheet, and chat sessions at **`/c/[chatId]`**. The center column is the hackathon **mosaic dashboard** fed by `mock-data`, not empty skeletons.
+This directory is the **Next.js 15 + TypeScript** demo for **Tipping Point**. The **main experience** (`/`) ports the **`data-hackathon-dashboard` shell**: left sidebar (chats, search, new chat, You), bottom **chat composer**, `?settings` profile sheet, and chat sessions at **`/c/[chatId]`**. The center column is the **mosaic dashboard**: on load it fetches **`/api/portfolio-data`** (ProPublica 990 extracts + **Moobu-style** 0–100 resilience scores). If that fails, it falls back to `mock-data` screener rows.
 
 ## Quick start
 
@@ -35,6 +35,8 @@ npm start
 | **`src/app/(main)/c/[chatId]/page.tsx`** | **`ChatSessionPage`** (messages + ChatBar). |
 | **`src/app/legacy/page.tsx`** | **`HackathonAppDeck`** — screener → detail → scenario + memo. |
 | **`src/app/api/gemini/route.ts`** | Server proxy for Gemini (same role as `data-hackathon-dashboard/api/gemini.ts`). |
+| **`src/app/api/portfolio-data/route.ts`** | ProPublica org JSON per configured EIN → **Moobu-equivalent** composite score (`src/lib/resilience-score.ts`) → screener rows + revenue facts. |
+| **`src/app/api/nonprofit-filings/route.ts`** | IRS filing history points for the revenue chart (ProPublica). |
 | **`src/dashboard-ui/`** | Ported UI from **`data-hackathon-dashboard`**: `LeftSidebar`, `ChatBar`, `YouSettingsOverlay`, chat persistence, etc. |
 | **`src/features/tipping-point/`** | Tipping Point mosaic UI (owned slice — import **`@/features/tipping-point`**). Use **`embedded`** on the dashboard when inside the shell (hides duplicate top chrome). |
 | **`src/components/legacy/hackathon-app-deck.tsx`** | Legacy deck only. |

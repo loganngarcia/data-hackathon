@@ -209,7 +209,7 @@ export function LeftSidebar({
                                     cursor: canCollapseChats ? "pointer" : "default",
                                 }}
                             >
-                                <div className="section-label">Your chats</div>
+                                <div className="left-sidebar-chats-heading">Your chats</div>
                                 {canCollapseChats &&
                                     !isYourChatsExpanded &&
                                     isYourChatsHovered && (
@@ -1017,12 +1017,15 @@ export function LeftSidebar({
           justify-content: center;
           flex-shrink: 0;
         }
-        .section-label {
+        .left-sidebar-chats-heading {
+          margin: 0;
           color: var(--text-secondary);
           font-size: 14px;
           font-family: var(--font-ui);
           font-weight: 400;
           line-height: 19.32px;
+          letter-spacing: normal;
+          text-transform: none;
         }
         .chat-item-row {
           align-self: stretch;

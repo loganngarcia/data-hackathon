@@ -1,0 +1,21 @@
+name            = "nonprofit-data"
+main            = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# ─── D1 Database ─────────────────────────────────────────────────────────────
+[[d1_databases]]
+binding  = "DB"
+database_name = "nonprofit-990"
+database_id   = "182e0e14-faac-42db-97de-f6e2ac5960ee"
+
+# ─── Secrets (set with: wrangler secret put ADMIN_KEY) ───────────────────────
+# ADMIN_KEY — protects the POST /api/sync route
+
+# ─── Routes (set your zone after deploying) ──────────────────────────────────
+# [[routes]]
+# pattern = "nonprofit-data.loganngarcia.com/*"
+# zone_name = "loganngarcia.com"
+
+[vars]
+PORTFOLIO_EINS = "330103012,680073413,371437781"   # comma-sep 9-digit EINs
