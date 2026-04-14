@@ -10,10 +10,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "deploy:vercel": "bash scripts/vercel-deploy.sh"
+    "deploy:vercel": "bash scripts/vercel-deploy.sh",
+    "deploy:production": "bash scripts/deploy-production.sh"
   },
   "dependencies": {
+    "google-auth-library": "^9.15.1",
     "next": "^15.3.1",
+    "openai": "^4.104.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

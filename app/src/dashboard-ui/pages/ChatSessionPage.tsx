@@ -4,14 +4,23 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import type { ChatMessage } from "../chat/types"
 import { isHoverCapable } from "../chat/hover"
-import { fetchGeminiReply, formatAssistantError } from "../chat/geminiFetch"
-import { loadChatMessages, saveChatMessages } from "../chat/persistChat"
+import { formatAssistantError, streamGeminiReply } from "../chat/geminiFetch"
+import { generateChatTitleFromFirstUserMessage } from "../chat/generateChatTitle"
+import {
+    getSavedChatById,
+    loadChatMessages,
+    renameChatSession,
+    saveChatMessages,
+} from "../chat/persistChat"
 import { transcriptForGemini } from "../chat/transcript"
 import { MessageBubble } from "../components/MessageBubble"
 import { ChatBar, type ChatBarOnSend } from "../components/ChatBar"
 
 /** Dedupes initial assistant reply when React Strict Mode runs effects twice. */
 const pendingInitialAssistant = new Set<string>()
+
+/** Dedupes AI sidebar title generation (`web.tsx` pattern). */
+const generatingChatTitle = new Set<string>()
 
 function newId(prefix: string): string {
     return `${prefix}-${crypto.randomUUID()}`
@@ -35,6 +44,29 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
         const loaded = loadChatMessages(chatId)
         setMessages(loaded ?? [])
     }, [chatId])
+
+    /** Sidebar title: AI short label from first user message (same flow as `web.tsx` `generateChatTitle`). */
+    useEffect(() => {
+        if (!chatId) return
+        const firstUser = messages.find((m) => m.role === "user" && m.text.trim())
+        if (!firstUser) return
+
+        const summary = getSavedChatById(chatId)
+        if (!summary || summary.title !== "New chat") return
+        if (generatingChatTitle.has(chatId)) return
+        generatingChatTitle.add(chatId)
+
+        void (async () => {
+            try {
+                const title = await generateChatTitleFromFirstUserMessage(firstUser.text)
+                if (title.trim() && title.trim() !== "New chat") {
+                    renameChatSession(chatId, title.trim())
+                }
+            } finally {
+                generatingChatTitle.delete(chatId)
+            }
+        })()
+    }, [chatId, messages])
 
     const onCopyMessage = useCallback((messageId: string) => {
         setCopiedId(messageId)
@@ -60,28 +92,34 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
         void (async () => {
             if (pendingInitialAssistant.has(chatId)) return
             pendingInitialAssistant.add(chatId)
+            const transcript = transcriptForGemini(messages)
+            const assistantId = newId("a")
             setSending(true)
+            setMessages((prev) => [
+                ...prev,
+                { id: assistantId, role: "assistant", text: "" },
+            ])
             try {
-                const text = await fetchGeminiReply(transcriptForGemini(messages))
-                const assistant: ChatMessage = {
-                    id: newId("a"),
-                    role: "assistant",
-                    text,
-                }
-                const next = [...messages, assistant]
-                setMessages(next)
-                saveChatMessages(chatId, next)
-            } catch (e) {
-                const assistant: ChatMessage = {
-                    id: newId("a"),
-                    role: "assistant",
-                    text: formatAssistantError(e),
-                }
+                await streamGeminiReply(transcript, (delta) => {
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === assistantId
+                                ? { ...m, text: m.text + delta }
+                                : m,
+                        ),
+                    )
+                })
                 setMessages((prev) => {
-                    if (prev.length !== 1 || prev[0].role !== "user")
-                        return prev
-                    if (prev.some((m) => m.role === "assistant")) return prev
-                    const next = [...prev, assistant]
+                    saveChatMessages(chatId, prev)
+                    return prev
+                })
+            } catch (e) {
+                setMessages((prev) => {
+                    const next = prev.map((m) =>
+                        m.id === assistantId
+                            ? { ...m, text: formatAssistantError(e) }
+                            : m,
+                    )
                     saveChatMessages(chatId, next)
                     return next
                 })
@@ -109,27 +147,36 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
             const withUser = [...messages, userMsg]
             setMessages(withUser)
             saveChatMessages(chatId, withUser)
+            const assistantId = newId("a")
             setSending(true)
+            setMessages((prev) => [
+                ...prev,
+                { id: assistantId, role: "assistant", text: "" },
+            ])
             try {
-                const replyText = await fetchGeminiReply(
-                    transcriptForGemini(withUser)
+                await streamGeminiReply(
+                    transcriptForGemini(withUser),
+                    (delta) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? { ...m, text: m.text + delta }
+                                    : m,
+                            ),
+                        )
+                    },
                 )
-                const assistant: ChatMessage = {
-                    id: newId("a"),
-                    role: "assistant",
-                    text: replyText,
-                }
-                const next = [...withUser, assistant]
-                setMessages(next)
-                saveChatMessages(chatId, next)
-            } catch (e) {
-                const assistant: ChatMessage = {
-                    id: newId("a"),
-                    role: "assistant",
-                    text: formatAssistantError(e),
-                }
                 setMessages((prev) => {
-                    const next = [...prev, assistant]
+                    saveChatMessages(chatId, prev)
+                    return prev
+                })
+            } catch (e) {
+                setMessages((prev) => {
+                    const next = prev.map((m) =>
+                        m.id === assistantId
+                            ? { ...m, text: formatAssistantError(e) }
+                            : m,
+                    )
                     saveChatMessages(chatId, next)
                     return next
                 })
@@ -139,6 +186,10 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
         },
         [chatId, messages]
     )
+
+    const lastMsg = messages.at(-1)
+    const streamingAssistantId =
+        sending && lastMsg?.role === "assistant" ? lastMsg.id : null
 
     return (
         <>
@@ -245,6 +296,11 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
                         previousMsg={i > 0 ? messages[i - 1] : undefined}
                         copiedMessageId={copiedId}
                         onCopy={onCopyMessage}
+                        isStreamingAssistant={
+                            msg.role === "assistant" &&
+                            streamingAssistantId !== null &&
+                            msg.id === streamingAssistantId
+                        }
                     />
                 ))}
             </div>

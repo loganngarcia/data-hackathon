@@ -1,104 +1,196 @@
+import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import { DEFAULT_OPENAI_CHAT_MODEL } from "@/lib/openai-chat-model";
+import {
+  buildOpenAIMultimodalUserContent,
+  type OpenAIFilePartInput,
+  type OpenAIImagePartInput,
+} from "@/lib/openai-multimodal-user-content";
+import {
+  runOpenAINonprofitToolAgent,
+  streamOpenAINonprofitToolAgentAsGeminiSSE,
+} from "@/lib/run-openai-nonprofit-tools";
 
 /**
- * Gemini HTTP API (AI Studio key): POST
- * `generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with header
- * `x-goog-api-key` — same pattern as the official “Text generation” REST examples
- * (https://ai.google.dev/gemini-api/docs/text-generation). Preview models use `v1beta`.
+ * Chat API (OpenAI): `POST /api/gemini` — path kept for existing ChatBar / `streamGeminiReply`.
  *
- * Default model id matches the model catalog:
- * https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-preview
+ * **Default:** `useNonprofitSearchTools !== false` runs **nonprofit D1 search** via `search_nonprofits`
+ * (Cloudflare Worker), then streams the assistant reply with **OpenAI token streaming** (`delta.content`)
+ * over **Gemini-shaped SSE** so `streamGeminiReply` is unchanged. Tool rounds complete before the final
+ * streamed answer. Set `{ "useNonprofitSearchTools": false }` for plain chat streaming without tools.
  *
- * Env (first match wins): GEMINI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY (common with Vercel AI SDK),
- * GOOGLE_API_KEY. Optional: GEMINI_MODEL.
+ * **Multimodal:** optional `images` (url or base64) and `files` (`fileId` from OpenAI Files API, or
+ * `fileDataBase64` + `filename`). At least one of `message`, `images`, or `files` is required.
  *
- * If Google returns "blocked" for generativelanguage.googleapis.com, the key or project
- * is not allowed to call the API: enable Generative Language API, and use a key whose
- * Application restrictions allow server-side use (not HTTP referrers only — Vercel has no browser referrer).
+ * Env: `OPENAI_API_KEY` (required). Optional: `OPENAI_MODEL` (default
+ * [gpt-5.4-nano](https://developers.openai.com/api/docs/models/gpt-5.4-nano)).
  */
-function augmentGeminiErrorMessage(msg: string): string {
-  if (!/blocked|PERMISSION_DENIED|API_KEY_INVALID/i.test(msg)) return msg;
+function augmentOpenAIErrorMessage(msg: string): string {
+  if (!/invalid_api_key|incorrect api key|authentication/i.test(msg)) return msg;
   return `${msg}
 
-How to fix (Google Cloud / AI Studio):
-• Project: enable the "Generative Language API" (APIs & Services → Library).
-• API key: Application restrictions must not be "HTTP referrers only" for this server route — use "None" or create a separate key at https://aistudio.google.com/apikey for backend use.
-• API key: under API restrictions, allow "Generative Language API" (or no restriction).`;
+Set OPENAI_API_KEY in Vercel → Environment Variables (or .env.local) and redeploy.`;
 }
 
 export async function POST(req: Request) {
-  let body: { message?: string; model?: string };
+  let body: {
+    message?: string;
+    images?: OpenAIImagePartInput[];
+    files?: OpenAIFilePartInput[];
+    model?: string;
+    stream?: boolean;
+    useNonprofitSearchTools?: boolean;
+    maxTurns?: number;
+  };
   try {
-    body = (await req.json()) as { message?: string; model?: string };
+    body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const apiKey =
-    process.env.GEMINI_API_KEY?.trim() ||
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ||
-    process.env.GOOGLE_API_KEY?.trim();
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     return NextResponse.json(
       {
         error:
-          "Missing API key. Set GEMINI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, or GOOGLE_API_KEY in Vercel → Settings → Environment Variables (then redeploy).",
+          "Missing OPENAI_API_KEY. Add it in Vercel → Settings → Environment Variables (then redeploy), or app/.env.local for local dev.",
       },
       { status: 503 },
     );
   }
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
-  if (!message) {
-    return NextResponse.json({ error: "message is required" }, { status: 400 });
+  const userContent = buildOpenAIMultimodalUserContent({
+    text: message || undefined,
+    images: Array.isArray(body.images) ? body.images : undefined,
+    files: Array.isArray(body.files) ? body.files : undefined,
+  });
+  if (userContent === null) {
+    return NextResponse.json(
+      {
+        error:
+          "Provide non-empty message text and/or images (url or base64), and/or files (fileId or fileDataBase64).",
+      },
+      { status: 400 },
+    );
   }
 
   const model =
     typeof body.model === "string" && body.model.trim()
       ? body.model.trim()
-      : process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite-preview";
+      : process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_CHAT_MODEL;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const stream = body.stream === true;
+  const useTools = body.useNonprofitSearchTools !== false;
 
-  const geminiRes = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: message }] }],
-    }),
-  });
+  const openai = new OpenAI({ apiKey });
 
-  const raw = await geminiRes.text();
-  let data: unknown;
+  if (useTools) {
+    if (stream) {
+      const sseBody = streamOpenAINonprofitToolAgentAsGeminiSSE({
+        model,
+        userContent,
+        maxTurns: body.maxTurns,
+      });
+      return new NextResponse(sseBody, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
+
+    const agent = await runOpenAINonprofitToolAgent({
+      model,
+      userContent,
+      maxTurns: body.maxTurns,
+    });
+
+    if (!agent.ok) {
+      const msg = augmentOpenAIErrorMessage(agent.error);
+      return NextResponse.json({ error: msg, details: agent.details }, { status: 502 });
+    }
+
+    let outText = agent.text.trim() || " ";
+    if (agent.warning) {
+      outText += `\n\n_${agent.warning}_`;
+    }
+
+    return NextResponse.json({
+      text: outText,
+      model,
+      steps: agent.steps,
+      turns: agent.turns,
+    });
+  }
+
+  if (stream) {
+    let s;
+    try {
+      s = await openai.chat.completions.create({
+        model,
+        messages: [{ role: "user", content: userContent }],
+        stream: true,
+      });
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      return NextResponse.json(
+        { error: augmentOpenAIErrorMessage(err), details: String(e) },
+        { status: 502 },
+      );
+    }
+
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          for await (const chunk of s) {
+            const delta = chunk.choices[0]?.delta?.content ?? "";
+            if (delta) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    candidates: [{ content: { parts: [{ text: delta }] } }],
+                  })}\n\n`,
+                ),
+              );
+            }
+          }
+          controller.close();
+        } catch (err) {
+          controller.error(err);
+        }
+      },
+    });
+
+    return new NextResponse(readable, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
+  }
+
+  let completion;
   try {
-    data = JSON.parse(raw);
-  } catch {
+    completion = await openai.chat.completions.create({
+      model,
+      messages: [{ role: "user", content: userContent }],
+    });
+  } catch (e) {
+    const err = e instanceof Error ? e.message : String(e);
     return NextResponse.json(
-      { error: "Invalid JSON from Gemini", raw: raw.slice(0, 400) },
+      { error: augmentOpenAIErrorMessage(err), details: String(e) },
       { status: 502 },
     );
   }
 
-  if (!geminiRes.ok) {
-    const rawMsg =
-      typeof data === "object" &&
-      data !== null &&
-      "error" in data &&
-      typeof (data as { error?: { message?: string } }).error?.message === "string"
-        ? (data as { error: { message: string } }).error.message
-        : "Gemini request failed";
-    const msg = augmentGeminiErrorMessage(rawMsg);
-    return NextResponse.json({ error: msg, details: data }, { status: 502 });
-  }
-
-  const d = data as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  };
-  const text =
-    d.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-
+  const text = completion.choices[0]?.message?.content ?? "";
   return NextResponse.json({ text, model });
 }

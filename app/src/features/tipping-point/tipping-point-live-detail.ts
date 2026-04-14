@@ -1,5 +1,6 @@
 import { buildPeerBenchmarks } from "@/lib/peer-benchmarks";
 import type { OrgDetail, ScreenerRow } from "@/lib/types";
+import { websiteUrlToDomain } from "@/lib/website-url";
 
 /** Shown when a field is not backed by ProPublica / computed metrics in this app. */
 export const EM_DASH = "\u2014";
@@ -19,8 +20,8 @@ export function buildLiveOrgDetail(
   return {
     id: row.id,
     organizationName: row.organizationName,
-    summary: EM_DASH,
-    website: "",
+    summary: row.missionSummary ?? EM_DASH,
+    website: websiteUrlToDomain(row.websiteUrl) || (row.logoDomain ?? ""),
     missionArea: row.missionArea,
     geography: geo || EM_DASH,
     currentYearRevenue: live?.currentYearRevenue ?? 0,

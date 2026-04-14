@@ -33,14 +33,105 @@ async function parseJsonBody(r: Response): Promise<{
     }
 }
 
-export async function fetchGeminiReply(transcript: string): Promise<string> {
+function extractTextFromGeminiChunk(data: unknown): string {
+    if (!data || typeof data !== "object") return ""
+    const d = data as {
+        candidates?: Array<{
+            content?: { parts?: Array<{ text?: string }> }
+        }>
+    }
+    const parts = d.candidates?.[0]?.content?.parts
+    if (!parts?.length) return ""
+    return parts.map((p) => (typeof p?.text === "string" ? p.text : "")).join("")
+}
+
+/**
+ * Stream a reply from Gemini via `POST /api/gemini` with `{ stream: true }`.
+ * Invokes `onDelta` for each text fragment (typically token-sized increments).
+ */
+export async function streamGeminiReply(
+    transcript: string,
+    onDelta: (delta: string) => void,
+): Promise<void> {
     const message = buildGeminiPromptWithYouContext(transcript)
     const r = await fetch("/api/gemini", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, stream: true }),
     })
-    const data = await parseJsonBody(r)
-    if (!r.ok) throw new Error(data.error || "Request failed")
-    return data.text ?? ""
+
+    const ct = r.headers.get("content-type") ?? ""
+
+    if (!r.ok) {
+        const data = await parseJsonBody(r)
+        throw new Error(data.error || "Request failed")
+    }
+
+    if (!ct.includes("text/event-stream") || !r.body) {
+        const data = await parseJsonBody(r)
+        throw new Error(data.error || "Expected streamed response from Gemini")
+    }
+
+    const reader = r.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+
+    try {
+        for (;;) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split("\n")
+            buffer = lines.pop() ?? ""
+            for (const line of lines) {
+                const trimmed = line.replace(/\r$/, "").trim()
+                if (!trimmed.startsWith("data:")) continue
+                const payload = trimmed.slice(5).trim()
+                if (payload === "[DONE]" || payload === "") continue
+                let data: unknown
+                try {
+                    data = JSON.parse(payload)
+                } catch {
+                    continue
+                }
+                if (
+                    data &&
+                    typeof data === "object" &&
+                    "error" in data &&
+                    (data as { error?: { message?: string } }).error?.message
+                ) {
+                    throw new Error(
+                        (data as { error: { message: string } }).error.message,
+                    )
+                }
+                const piece = extractTextFromGeminiChunk(data)
+                if (piece) onDelta(piece)
+            }
+        }
+
+        const tail = buffer.replace(/\r$/, "").trim()
+        if (tail.startsWith("data:")) {
+            const payload = tail.slice(5).trim()
+            if (payload && payload !== "[DONE]") {
+                try {
+                    const data = JSON.parse(payload) as unknown
+                    const piece = extractTextFromGeminiChunk(data)
+                    if (piece) onDelta(piece)
+                } catch {
+                    /* ignore trailing partial */
+                }
+            }
+        }
+    } finally {
+        reader.releaseLock()
+    }
+}
+
+/** Non-streaming: collects streamed deltas into one string (same model path as UI streaming). */
+export async function fetchGeminiReply(transcript: string): Promise<string> {
+    let out = ""
+    await streamGeminiReply(transcript, (d) => {
+        out += d
+    })
+    return out
 }

@@ -12,17 +12,41 @@
  *   POST /api/sync/registry-batch  → sync next N EINs from irs_ein_years not yet in organizations (admin)
  *   GET  /api/stats                → row counts (organizations + IRS index if migrated)
  *   GET  /api/registry             → paginated rows from irs_filings_raw (full IRS index mirror)
- *   GET  /api/irs990-browse        → latest full-Form-990 row per EIN from irs990_xml_returns (TEOS ingest)
+ *   GET  /api/irs990-browse        → latest full-Form-990 row per EIN from irs990_xml_returns (TEOS ingest). Query: `revenueBand`, `assetsBand` (net assets EOY), `reserveBand` (reserve coverage months: net_assets_eoy / cy_total_expenses * 12), `employeeBand`, `volunteerBand`, `boardBand` (governing-body voting members: COALESCE(governing_body_voting_cnt, voting_members_governing_cnt)), `state`, etc. When `LOGO_DEV_PUBLISHABLE_KEY` is set, each row includes `logo_image_url` (D1 domains + Logo.dev CDN).
+ *                                   Query: `random=1` or `order=random` → ORDER BY RANDOM() (offset ignored; use `exclude` for paging).
+ *   GET  /api/irs990-bucket-counts → aggregate bucket totals (score formula matches Next mapIrs990Rows)
+ *   GET  /api/irs990-website       → latest TEOS `website_txt` for an EIN
+ *   GET  /api/irs990-mission       → latest TEOS `mission_desc` / `activity_mission_desc` for an EIN
+ *   GET  /api/irs990-people        → Part VII Section A names/titles (+ principal/business officer fallback) for latest filing
+ *   GET|POST /api/irs990-search    → filterable TEOS latest-filing-per-EIN search (many query params / JSON body fields)
+ *   POST /mcp                       → JSON-RPC MCP-style tools (search_nonprofits) over D1
+ *   POST /api/logo-cache-warm      → fill `org_logo_cache` from TEOS websites + Logo.dev Brand Search (admin)
+ *   POST /api/d1-normalize         → batch-rewrite existing D1 text (org name, city, state) + refresh logo cache (admin; no crons — call until done)
  *   GET  /health                   → liveness check
  */
 
+import {
+  formatCityDisplay,
+  formatStateAbbrevDisplay,
+  toOrganizationTitleCase,
+} from "./org-name-format";
 import { scoring } from "./scoring";
 import { normalizeFiling } from "./normalize";
+import { parseSearchFilters, runIrs990Search } from "./irs990-search";
+import { handleMcpPost, mcpOptions } from "./mcp-server";
+import { resolveLogoDevImageUrl } from "./logo-dev-url";
 
 export interface Env {
   DB: D1Database;
   ADMIN_KEY: string;
   PORTFOLIO_EINS: string; // comma-separated 9-digit EINs
+  /** Optional — `sk_…` for https://api.logo.dev/search (warm route only; never expose to clients). */
+  LOGO_DEV_SECRET_KEY?: string;
+  /**
+   * Optional — `pk_…` for https://img.logo.dev/… — Worker adds `logo_image_url` on `/api/irs990-browse` rows.
+   * Set with `wrangler secret put LOGO_DEV_PUBLISHABLE_KEY` so the Next app does not bundle a public key.
+   */
+  LOGO_DEV_PUBLISHABLE_KEY?: string;
 }
 
 // ─── CORS headers ─────────────────────────────────────────────────────────────
@@ -82,9 +106,67 @@ export default {
       return handleIrs990Browse(request, env);
     }
 
+    if (pathname === "/api/irs990-bucket-counts" && request.method === "GET") {
+      return handleIrs990BucketCounts(request, env);
+    }
+
+    if (pathname === "/api/irs990-website" && request.method === "GET") {
+      return handleIrs990Website(request, env);
+    }
+
+    if (pathname === "/api/irs990-mission" && request.method === "GET") {
+      return handleIrs990Mission(request, env);
+    }
+
+    if (pathname === "/api/irs990-people" && request.method === "GET") {
+      return handleIrs990People(request, env);
+    }
+
+    if (pathname === "/api/irs990-search" && (request.method === "GET" || request.method === "POST")) {
+      return handleIrs990SearchApi(request, env);
+    }
+
+    if (pathname === "/mcp") {
+      if (request.method === "OPTIONS") return mcpOptions();
+      if (request.method === "POST") return handleMcpPost(request, env);
+      return json({ error: "Method not allowed" }, 405);
+    }
+
+    if (pathname === "/api/logo-cache-warm" && request.method === "POST") {
+      return handleLogoCacheWarm(request, env);
+    }
+
+    if (pathname === "/api/d1-normalize" && request.method === "POST") {
+      return handleD1Normalize(request, env);
+    }
+
     return json({ error: "Not found" }, 404);
   },
 };
+
+// ─── GET|POST /api/irs990-search ──────────────────────────────────────────────
+async function handleIrs990SearchApi(request: Request, env: Env): Promise<Response> {
+  try {
+    if (request.method === "GET") {
+      const url = new URL(request.url);
+      const filters = parseSearchFilters(url.searchParams);
+      const result = await runIrs990Search(env, filters);
+      return json({ ok: true, ...result });
+    }
+    let body: Record<string, unknown> = {};
+    try {
+      body = (await request.json()) as Record<string, unknown>;
+    } catch {
+      return json({ error: "Invalid JSON body" }, 400);
+    }
+    const filters = parseSearchFilters(body);
+    const result = await runIrs990Search(env, filters);
+    return json({ ok: true, ...result });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return json({ ok: false, error: msg }, 500);
+  }
+}
 
 // ─── GET /api/portfolio ───────────────────────────────────────────────────────
 async function handlePortfolio(env: Env): Promise<Response> {
@@ -94,9 +176,19 @@ async function handlePortfolio(env: Env): Promise<Response> {
     `SELECT o.ein, o.name, o.city, o.state, o.ntee_label,
             s.composite_score, s.tier, s.risk_band,
             s.reserve_months, s.growth_rate, s.staff_estimate,
-            s.current_revenue, s.prior_revenue, s.computed_at
+            s.current_revenue, s.prior_revenue, s.computed_at,
+            teos.net_assets_eoy_amt AS teos_net_assets_eoy_amt
      FROM organizations o
      LEFT JOIN scores s ON s.ein = o.ein
+     LEFT JOIN (
+       SELECT r.ein, r.net_assets_eoy_amt
+       FROM irs990_xml_returns r
+       INNER JOIN (
+         SELECT ein, MAX(COALESCE(tax_yr, 0)) AS max_ty
+         FROM irs990_xml_returns
+         GROUP BY ein
+       ) latest ON r.ein = latest.ein AND COALESCE(r.tax_yr, 0) = latest.max_ty
+     ) teos ON teos.ein = o.ein
      WHERE o.ein IN (${eins.map(() => "?").join(",")})`,
   )
     .bind(...eins)
@@ -113,19 +205,23 @@ async function handlePortfolio(env: Env): Promise<Response> {
   }
 
   // Build screener-compatible response shape
-  const screener = rows.results.map((r) => ({
-    ein: formatEin(r.ein as string),
-    organizationName: r.name,
-    city: r.city,
-    state: r.state,
-    missionArea: r.ntee_label,
-    screenScore: Math.round(Number(r.composite_score ?? 0)),
-    riskBand: r.risk_band ?? "At Risk",
-    reserveMonths: Number(r.reserve_months ?? 0),
-    growthRate: Number(r.growth_rate ?? 0),
-    staffCount: Number(r.staff_estimate ?? 1),
-    revenue: Number(r.current_revenue ?? 0),
-  }));
+  const screener = rows.results.map((r) => {
+    const na = Number(r.teos_net_assets_eoy_amt ?? 0);
+    return {
+      ein: formatEin(r.ein as string),
+      organizationName: toOrganizationTitleCase(String(r.name ?? "Unknown organization").trim()) || "Unknown organization",
+      city: formatCityDisplay(String(r.city ?? "\u2014")),
+      state: formatStateAbbrevDisplay(String(r.state ?? "\u2014")),
+      missionArea: r.ntee_label,
+      screenScore: Math.round(Number(r.composite_score ?? 0)),
+      riskBand: r.risk_band ?? "At Risk",
+      reserveMonths: Number(r.reserve_months ?? 0),
+      growthRate: Number(r.growth_rate ?? 0),
+      staffCount: Number(r.staff_estimate ?? 1),
+      revenue: Number(r.current_revenue ?? 0),
+      netAssetsEoy: Number.isFinite(na) ? na : 0,
+    };
+  });
 
   const revenueByOrg: Record<string, { currentYearRevenue: number; priorYearRevenue: number }> = {};
   for (const r of rows.results) {
@@ -266,43 +362,736 @@ function parseExcludeEins(url: URL): string[] {
     .filter((s) => s.length === 9);
 }
 
-/** Latest filing per EIN from TEOS `irs990_xml_returns` (full Form 990 XML pipeline). */
-async function handleIrs990Browse(request: Request, env: Env): Promise<Response> {
+/**
+ * Same latest-per-EIN slice as `/api/irs990-browse`.
+ * Aggregate score proxy for filter labels (per-row scores use Moobu `computeResilienceScore` in Next):
+ * legacy blend of growth + reserve months. Buckets: at-risk = score < 50, thriving = score > 90.
+ */
+async function handleIrs990BucketCounts(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "20", 10) || 20));
-  const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
-  const take = Math.min(101, limit + 1);
   const exclude = parseExcludeEins(url);
   const excludeSql =
     exclude.length > 0 ? ` AND r.ein NOT IN (${exclude.map(() => "?").join(",")}) ` : "";
 
+  const stmt = `
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN sc < 50 THEN 1 ELSE 0 END) AS at_risk,
+      SUM(CASE WHEN sc > 90 THEN 1 ELSE 0 END) AS thriving
+    FROM (
+      SELECT ROUND(
+        MIN(100.0, MAX(0.0,
+          38.0
+          + MIN(22.0, (
+              CASE WHEN ABS(COALESCE(r.py_total_revenue_amt, 0)) > 0.000001
+                THEN ((r.cy_total_revenue_amt - r.py_total_revenue_amt) * 1.0 / ABS(r.py_total_revenue_amt)) * 100.0
+                ELSE 0.0 END
+            ) / 3.0)
+          + MIN(28.0,
+              (CASE WHEN COALESCE(r.cy_total_expenses_amt, 0) > 0
+                THEN (r.net_assets_eoy_amt * 1.0 / r.cy_total_expenses_amt) * 12.0
+                ELSE 0.0 END) * 1.5)
+        ))
+      ) AS sc
+      FROM irs990_xml_returns r
+      INNER JOIN (
+        SELECT ein, MAX(COALESCE(tax_yr, 0)) AS max_ty
+        FROM irs990_xml_returns
+        GROUP BY ein
+      ) latest ON r.ein = latest.ein AND COALESCE(r.tax_yr, 0) = latest.max_ty
+      WHERE 1=1 ${excludeSql}
+    ) t
+  `;
+
   try {
-    const stmt = `SELECT r.return_pk, r.ein, r.org_legal_name AS name, r.filer_city AS city, r.filer_state AS state,
-              r.cy_total_revenue_amt, r.py_total_revenue_amt, r.cy_total_expenses_amt, r.net_assets_eoy_amt,
-              r.total_employee_cnt, r.tax_yr, r.organization_501c3_ind, r.website_txt
+    const row = await env.DB.prepare(stmt)
+      .bind(...exclude)
+      .first<{ total: number | null; at_risk: number | null; thriving: number | null }>();
+
+    const total = Number(row?.total ?? 0);
+    const atRisk = Number(row?.at_risk ?? 0);
+    const thriving = Number(row?.thriving ?? 0);
+
+    return json({
+      total,
+      atRisk,
+      thriving,
+      source: "irs990_xml_returns",
+    });
+  } catch (e) {
+    return json(
+      {
+        error:
+          "irs990_xml_returns not available — run schema-irs990-xml.sql and TEOS ingest (see IRS-990-XML-INGEST.md).",
+        details: (e as Error).message,
+      },
+      503,
+    );
+  }
+}
+
+/** Latest `website_txt` for one EIN (TEOS ingest). */
+async function handleIrs990Website(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const ein = (url.searchParams.get("ein") ?? "").replace(/\D/g, "");
+  if (ein.length !== 9) {
+    return json({ error: "ein must be 9 digits" }, 400);
+  }
+
+  try {
+    const row = await env.DB.prepare(
+      `SELECT r.website_txt
        FROM irs990_xml_returns r
        INNER JOIN (
          SELECT ein, MAX(COALESCE(tax_yr, 0)) AS max_ty
          FROM irs990_xml_returns
          GROUP BY ein
        ) latest ON r.ein = latest.ein AND COALESCE(r.tax_yr, 0) = latest.max_ty
-       WHERE 1=1 ${excludeSql}
-       ORDER BY r.org_legal_name COLLATE NOCASE
+       WHERE r.ein = ?
+       LIMIT 1`,
+    )
+      .bind(ein)
+      .first<{ website_txt: string | null }>();
+
+    const raw = row?.website_txt?.trim();
+    if (!raw) {
+      return json({ website: null as string | null });
+    }
+    let out = raw;
+    if (!/^https?:\/\//i.test(out)) {
+      out = `https://${out.replace(/^\/+/, "")}`;
+    }
+    try {
+      const u = new URL(out);
+      if (u.protocol !== "http:" && u.protocol !== "https:") {
+        return json({ website: null as string | null });
+      }
+      return json({ website: u.toString() });
+    } catch {
+      return json({ website: null as string | null });
+    }
+  } catch (e) {
+    return json(
+      {
+        website: null as string | null,
+        error: (e as Error).message,
+      },
+      503,
+    );
+  }
+}
+
+/** Latest TEOS mission / activity text (raw; Next.js formats for display). */
+async function handleIrs990Mission(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const ein = (url.searchParams.get("ein") ?? "").replace(/\D/g, "");
+  if (ein.length !== 9) {
+    return json({ error: "ein must be 9 digits" }, 400);
+  }
+
+  try {
+    const row = await env.DB.prepare(
+      `SELECT r.mission_desc, r.activity_mission_desc
+       FROM irs990_xml_returns r
+       INNER JOIN (
+         SELECT ein, MAX(COALESCE(tax_yr, 0)) AS max_ty
+         FROM irs990_xml_returns
+         GROUP BY ein
+       ) latest ON r.ein = latest.ein AND COALESCE(r.tax_yr, 0) = latest.max_ty
+       WHERE r.ein = ?
+       LIMIT 1`,
+    )
+      .bind(ein)
+      .first<{ mission_desc: string | null; activity_mission_desc: string | null }>();
+
+    const a = row?.activity_mission_desc?.trim() ?? "";
+    const m = row?.mission_desc?.trim() ?? "";
+    let mission_raw: string | null = null;
+    if (a && m) {
+      mission_raw = a.length >= m.length ? a : m;
+    } else {
+      mission_raw = a || m || null;
+    }
+
+    return json({ mission_raw });
+  } catch (e) {
+    return json({ mission_raw: null as string | null, error: (e as Error).message });
+  }
+}
+
+type Irs990PersonRow = { name: string; title: string | null };
+
+/** Part VII Section A (latest TEOS filing per EIN); fallback principal / business officer from return header. */
+async function handleIrs990People(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const ein = (url.searchParams.get("ein") ?? "").replace(/\D/g, "");
+  if (ein.length !== 9) {
+    return json({ error: "ein must be 9 digits" }, 400);
+  }
+  const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") ?? "28", 10) || 28));
+
+  try {
+    const latest = await env.DB.prepare(
+      `SELECT r.return_pk, r.principal_officer_nm, r.business_officer_person_nm, r.business_officer_title_txt
+       FROM irs990_xml_returns r
+       INNER JOIN (
+         SELECT ein, MAX(COALESCE(tax_yr, 0)) AS max_ty
+         FROM irs990_xml_returns
+         GROUP BY ein
+       ) latest ON r.ein = latest.ein AND COALESCE(r.tax_yr, 0) = latest.max_ty
+       WHERE r.ein = ?
+       LIMIT 1`,
+    )
+      .bind(ein)
+      .first<{
+        return_pk: string;
+        principal_officer_nm: string | null;
+        business_officer_person_nm: string | null;
+        business_officer_title_txt: string | null;
+      }>();
+
+    if (!latest?.return_pk) {
+      return json({ people: [] as Irs990PersonRow[] });
+    }
+
+    const partVii = await env.DB.prepare(
+      `SELECT person_nm, title_txt FROM irs990_xml_people
+       WHERE return_pk = ? AND former_ind = 0
+       ORDER BY row_ix ASC
+       LIMIT ?`,
+    )
+      .bind(latest.return_pk, limit)
+      .all<{ person_nm: string | null; title_txt: string | null }>();
+
+    const people: Irs990PersonRow[] = [];
+    const seen = new Set<string>();
+
+    for (const r of partVii.results ?? []) {
+      const name = (r.person_nm ?? "").trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const titleRaw = (r.title_txt ?? "").trim();
+      people.push({ name, title: titleRaw.length > 0 ? titleRaw : null });
+    }
+
+    if (people.length === 0) {
+      const po = (latest.principal_officer_nm ?? "").trim();
+      const bo = (latest.business_officer_person_nm ?? "").trim();
+      const boTitle = (latest.business_officer_title_txt ?? "").trim();
+
+      if (po) {
+        people.push({ name: po, title: null });
+        seen.add(po.toLowerCase());
+      }
+      if (bo && !seen.has(bo.toLowerCase())) {
+        people.push({
+          name: bo,
+          title: boTitle.length > 0 ? boTitle : null,
+        });
+      }
+    }
+
+    return json({ people });
+  } catch (e) {
+    return json({ people: [] as Irs990PersonRow[], error: (e as Error).message });
+  }
+}
+
+function normalizeWebsiteToDomain(raw: string | null | undefined): string | null {
+  const t = typeof raw === "string" ? raw.trim() : "";
+  if (!t) return null;
+  let candidate = t;
+  if (!/^https?:\/\//i.test(candidate)) {
+    candidate = `https://${candidate.replace(/^\/+/, "")}`;
+  }
+  try {
+    const u = new URL(candidate);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    const h = u.hostname.replace(/^www\./i, "").toLowerCase();
+    return h.length >= 3 ? h : null;
+  } catch {
+    return null;
+  }
+}
+
+async function logoDevSearchDomain(secret: string, q: string): Promise<string | null> {
+  const url = `https://api.logo.dev/search?q=${encodeURIComponent(q)}&strategy=match`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${secret}` },
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as unknown;
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const first = data[0] as { domain?: string };
+  const d = typeof first?.domain === "string" ? first.domain.trim() : "";
+  if (!d || !/^[\w.-]+$/.test(d)) return null;
+  return d.toLowerCase();
+}
+
+/**
+ * Populate `org_logo_cache`: TEOS `website_txt` → domain first; else Brand Search on legal name.
+ * Requires `wrangler secret put LOGO_DEV_SECRET_KEY` for search rows without a website.
+ */
+async function handleLogoCacheWarm(request: Request, env: Env): Promise<Response> {
+  const key = request.headers.get("X-Admin-Key") ?? "";
+  if (!env.ADMIN_KEY || key !== env.ADMIN_KEY) {
+    return json({ error: "Unauthorized — provide X-Admin-Key header" }, 401);
+  }
+
+  const secret = env.LOGO_DEV_SECRET_KEY?.trim();
+
+  const url = new URL(request.url);
+  const limit = Math.min(2000, Math.max(1, parseInt(url.searchParams.get("limit") ?? "150", 10) || 150));
+  const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
+
+  let rows: { results?: Array<Record<string, unknown>> };
+  try {
+    rows = await env.DB.prepare(
+      `SELECT r.ein, r.org_legal_name AS name, r.website_txt
+       FROM irs990_xml_returns r
+       INNER JOIN (
+         SELECT ein, MAX(COALESCE(tax_yr, 0)) AS max_ty
+         FROM irs990_xml_returns
+         GROUP BY ein
+       ) latest ON r.ein = latest.ein AND COALESCE(r.tax_yr, 0) = latest.max_ty
+       ORDER BY r.ein
+       LIMIT ? OFFSET ?`,
+    )
+      .bind(limit, offset)
+      .all();
+  } catch (e) {
+    return json(
+      {
+        error: "org_logo_cache or irs990_xml_returns unavailable — run schema SQL + ingest.",
+        details: (e as Error).message,
+      },
+      503,
+    );
+  }
+
+  const results: Array<{ ein: string; status: string; domain?: string }> = [];
+
+  for (const raw of rows.results ?? []) {
+    const ein = String(raw.ein ?? "").replace(/\D/g, "").padStart(9, "0").slice(0, 9);
+    if (ein.length !== 9) {
+      results.push({ ein, status: "bad_ein" });
+      continue;
+    }
+
+    const cached = await env.DB.prepare("SELECT ein FROM org_logo_cache WHERE ein = ?").bind(ein).first();
+    if (cached) {
+      results.push({ ein, status: "skip_cached" });
+      continue;
+    }
+
+    const name = String(raw.name ?? "").trim();
+    const fromWeb = normalizeWebsiteToDomain(raw.website_txt as string | null | undefined);
+    if (fromWeb) {
+      await env.DB.prepare(
+        `INSERT INTO org_logo_cache (ein, logo_domain, source, updated_at) VALUES (?, ?, 'website', unixepoch())`,
+      )
+        .bind(ein, fromWeb)
+        .run();
+      results.push({ ein, status: "website", domain: fromWeb });
+      continue;
+    }
+
+    if (!name) {
+      results.push({ ein, status: "no_name" });
+      continue;
+    }
+
+    if (!secret) {
+      results.push({ ein, status: "needs_logo_dev_secret" });
+      continue;
+    }
+
+    const domain = await logoDevSearchDomain(secret, name);
+    if (!domain) {
+      results.push({ ein, status: "search_miss" });
+      continue;
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO org_logo_cache (ein, logo_domain, source, updated_at) VALUES (?, ?, 'brand_search', unixepoch())`,
+    )
+      .bind(ein, domain)
+      .run();
+    results.push({ ein, status: "brand_search", domain });
+  }
+
+  return json({
+    offset,
+    limit,
+    processed: results.length,
+    results,
+    ts: Date.now(),
+  });
+}
+
+/**
+ * One-shot / batched backfill: normalize `organizations` + every `irs990_xml_returns` row (name, city, state),
+ * and UPSERT `org_logo_cache` from TEOS websites + Logo.dev (latest filing per EIN).
+ * No cron — call repeatedly with next `irsOffset` / `logoOffset` until both `done` are true.
+ */
+async function handleD1Normalize(request: Request, env: Env): Promise<Response> {
+  const key = request.headers.get("X-Admin-Key") ?? "";
+  if (!env.ADMIN_KEY || key !== env.ADMIN_KEY) {
+    return json({ error: "Unauthorized — provide X-Admin-Key header" }, 401);
+  }
+
+  const url = new URL(request.url);
+  const batch = Math.min(500, Math.max(1, parseInt(url.searchParams.get("batch") ?? "150", 10) || 150));
+  const irsOffset = Math.max(0, parseInt(url.searchParams.get("irsOffset") ?? "0", 10) || 0);
+  const logoOffset = Math.max(0, parseInt(url.searchParams.get("logoOffset") ?? "0", 10) || 0);
+  const doOrgs = url.searchParams.get("organizations") !== "false";
+  const doIrs = url.searchParams.get("irs990") !== "false";
+  const doLogos = url.searchParams.get("logos") !== "false";
+
+  const secret = env.LOGO_DEV_SECRET_KEY?.trim();
+  const out: Record<string, unknown> = {
+    note: "This project has no scheduled crons; re-POST with nextOffset values until irs990.done and logos.done are true.",
+  };
+
+  try {
+    if (doOrgs) {
+      const orgRows = await env.DB.prepare("SELECT ein, name, city, state FROM organizations").all();
+      let n = 0;
+      for (const row of orgRows.results ?? []) {
+        const ein = row.ein as string;
+        const name = toOrganizationTitleCase(String(row.name ?? "").trim()) || "Unknown organization";
+        const city = formatCityDisplay(String(row.city ?? "").trim() || "\u2014");
+        const state = formatStateAbbrevDisplay(String(row.state ?? "").trim() || "\u2014");
+        await env.DB.prepare("UPDATE organizations SET name = ?, city = ?, state = ? WHERE ein = ?")
+          .bind(name, city, state, ein)
+          .run();
+        n++;
+      }
+      out.organizations = { updated: n };
+    } else {
+      out.organizations = { skipped: true };
+    }
+
+    if (doIrs) {
+      const sel = await env.DB.prepare(
+        `SELECT return_pk, org_legal_name, filer_city, filer_state FROM irs990_xml_returns ORDER BY return_pk LIMIT ? OFFSET ?`,
+      )
+        .bind(batch, irsOffset)
+        .all();
+      const rows = sel.results ?? [];
+      let n = 0;
+      for (const row of rows) {
+        const pk = String(row.return_pk ?? "");
+        const nm = toOrganizationTitleCase(String(row.org_legal_name ?? "").trim() || "Unknown organization");
+        const ci = formatCityDisplay(String(row.filer_city ?? "").trim() || "\u2014");
+        const st = formatStateAbbrevDisplay(String(row.filer_state ?? "").trim() || "\u2014");
+        await env.DB.prepare(
+          `UPDATE irs990_xml_returns SET org_legal_name = ?, filer_city = ?, filer_state = ? WHERE return_pk = ?`,
+        )
+          .bind(nm, ci, st, pk)
+          .run();
+        n++;
+      }
+      const got = rows.length;
+      out.irs990 = {
+        updated: n,
+        batch,
+        offsetStart: irsOffset,
+        nextOffset: got < batch ? null : irsOffset + got,
+        done: got < batch,
+      };
+    } else {
+      out.irs990 = { skipped: true };
+    }
+
+    if (doLogos) {
+      const sel = await env.DB.prepare(
+        `SELECT r.ein, r.org_legal_name, r.website_txt
+         FROM irs990_xml_returns r
+         INNER JOIN (
+           SELECT ein, MAX(COALESCE(tax_yr, 0)) AS max_ty
+           FROM irs990_xml_returns
+           GROUP BY ein
+         ) latest ON r.ein = latest.ein AND COALESCE(r.tax_yr, 0) = latest.max_ty
+         ORDER BY r.ein
+         LIMIT ? OFFSET ?`,
+      )
+        .bind(batch, logoOffset)
+        .all();
+      const rows = sel.results ?? [];
+      const results: Array<{ ein: string; status: string; domain?: string }> = [];
+      for (const raw of rows) {
+        const ein = String(raw.ein ?? "").replace(/\D/g, "").padStart(9, "0").slice(0, 9);
+        if (ein.length !== 9) {
+          results.push({ ein, status: "bad_ein" });
+          continue;
+        }
+        const legal = String(raw.org_legal_name ?? "").trim();
+        const displayName = toOrganizationTitleCase(legal) || legal;
+        const fromWeb = normalizeWebsiteToDomain(raw.website_txt as string | null | undefined);
+        if (fromWeb) {
+          await env.DB.prepare(
+            `INSERT INTO org_logo_cache (ein, logo_domain, source, updated_at) VALUES (?, ?, 'website', unixepoch())
+             ON CONFLICT(ein) DO UPDATE SET logo_domain = excluded.logo_domain, source = excluded.source, updated_at = unixepoch()`,
+          )
+            .bind(ein, fromWeb)
+            .run();
+          results.push({ ein, status: "website", domain: fromWeb });
+          continue;
+        }
+        const searchQ = displayName || legal;
+        if (!searchQ) {
+          results.push({ ein, status: "no_name" });
+          continue;
+        }
+        if (!secret) {
+          results.push({ ein, status: "needs_logo_dev_secret" });
+          continue;
+        }
+        const domain = await logoDevSearchDomain(secret, searchQ);
+        if (!domain) {
+          results.push({ ein, status: "search_miss" });
+          continue;
+        }
+        await env.DB.prepare(
+          `INSERT INTO org_logo_cache (ein, logo_domain, source, updated_at) VALUES (?, ?, 'brand_search', unixepoch())
+           ON CONFLICT(ein) DO UPDATE SET logo_domain = excluded.logo_domain, source = excluded.source, updated_at = unixepoch()`,
+        )
+          .bind(ein, domain)
+          .run();
+        results.push({ ein, status: "brand_search", domain });
+      }
+      const got = rows.length;
+      out.logos = {
+        processed: results.length,
+        results,
+        batch,
+        offsetStart: logoOffset,
+        nextOffset: got < batch ? null : logoOffset + got,
+        done: got < batch,
+      };
+    } else {
+      out.logos = { skipped: true };
+    }
+
+    return json({ ...out, ts: Date.now() });
+  } catch (e) {
+    return json({ error: (e as Error).message, details: String(e) }, 500);
+  }
+}
+
+/** Latest filing per EIN from TEOS `irs990_xml_returns` (full Form 990 XML pipeline). */
+async function handleIrs990Browse(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "20", 10) || 20));
+  const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
+  const take = Math.min(101, limit + 1);
+  const random =
+    url.searchParams.get("random") === "1" ||
+    url.searchParams.get("order") === "random";
+  const exclude = parseExcludeEins(url);
+  const excludeSql =
+    exclude.length > 0 ? ` AND r.ein NOT IN (${exclude.map(() => "?").join(",")}) ` : "";
+
+  /** USD bounds on latest-year `cy_total_revenue_amt` (aligned with app `lib/revenue-band.ts`). */
+  const bandParam = (url.searchParams.get("revenueBand") ?? "").trim();
+  let revenueSql = "";
+  const revenueBinds: number[] = [];
+  if (bandParam === "lt10k") {
+    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
+    revenueBinds.push(0, 10_000);
+  } else if (bandParam === "10k_100k") {
+    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
+    revenueBinds.push(10_000, 100_000);
+  } else if (bandParam === "100k_500k") {
+    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
+    revenueBinds.push(100_000, 500_000);
+  } else if (bandParam === "500k_1m") {
+    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
+    revenueBinds.push(500_000, 1_000_000);
+  } else if (bandParam === "1m_5m") {
+    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
+    revenueBinds.push(1_000_000, 5_000_000);
+  } else if (bandParam === "gt5m") {
+    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? `;
+    revenueBinds.push(5_000_000);
+  }
+
+  /** Net assets EOY (`net_assets_eoy_amt`) — aligned with app `lib/assets-band.ts`. */
+  const assetsParam = (url.searchParams.get("assetsBand") ?? "").trim();
+  let assetsSql = "";
+  const assetsBinds: number[] = [];
+  if (assetsParam === "0_10k") {
+    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
+    assetsBinds.push(0, 10_000);
+  } else if (assetsParam === "10k_50k") {
+    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
+    assetsBinds.push(10_000, 50_000);
+  } else if (assetsParam === "50k_100k") {
+    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
+    assetsBinds.push(50_000, 100_000);
+  } else if (assetsParam === "100k_500k") {
+    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
+    assetsBinds.push(100_000, 500_000);
+  } else if (assetsParam === "500k_1m") {
+    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
+    assetsBinds.push(500_000, 1_000_000);
+  } else if (assetsParam === "1m_plus") {
+    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? `;
+    assetsBinds.push(1_000_000);
+  }
+
+  /** Reserve coverage (months) — aligned with app `lib/reserve-band.ts` / `ScreenerRow.reserveMonths`. */
+  const reserveMonthsExpr = `(CASE WHEN COALESCE(r.cy_total_expenses_amt, 0) > 0 THEN (CAST(COALESCE(r.net_assets_eoy_amt, 0) AS REAL) / r.cy_total_expenses_amt) * 12 ELSE 0 END)`;
+  const reserveParam = (url.searchParams.get("reserveBand") ?? "").trim();
+  let reserveSql = "";
+  const reserveBinds: number[] = [];
+  if (reserveParam === "m0_3") {
+    reserveSql = ` AND ${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ? `;
+    reserveBinds.push(0, 3);
+  } else if (reserveParam === "m3_6") {
+    reserveSql = ` AND ${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ? `;
+    reserveBinds.push(3, 6);
+  } else if (reserveParam === "m6_12") {
+    reserveSql = ` AND ${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ? `;
+    reserveBinds.push(6, 12);
+  } else if (reserveParam === "m12_24") {
+    reserveSql = ` AND ${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ? `;
+    reserveBinds.push(12, 24);
+  } else if (reserveParam === "m24p") {
+    reserveSql = ` AND ${reserveMonthsExpr} >= ? `;
+    reserveBinds.push(24);
+  }
+
+  /** Optional `employeeBand` / `volunteerBand`: `0_1`, `1_10`, `10_50`, `50_100`, `100p` (aligned with app `portfolio-toolbar-bands`). */
+  const countBandSql = (
+    paramName: "employeeBand" | "volunteerBand",
+    column: "total_employee_cnt" | "total_volunteers_cnt",
+  ): { sql: string; binds: number[] } => {
+    const raw = (url.searchParams.get(paramName) ?? "").trim();
+    if (!raw || raw === "all") return { sql: "", binds: [] };
+    const n = `COALESCE(r.${column}, 0)`;
+    switch (raw) {
+      case "0_1":
+        return { sql: ` AND ${n} >= ? AND ${n} <= ? `, binds: [0, 1] };
+      case "1_10":
+        return { sql: ` AND ${n} >= ? AND ${n} <= ? `, binds: [1, 10] };
+      case "10_50":
+        return { sql: ` AND ${n} >= ? AND ${n} <= ? `, binds: [10, 50] };
+      case "50_100":
+        return { sql: ` AND ${n} >= ? AND ${n} <= ? `, binds: [50, 100] };
+      case "100p":
+        return { sql: ` AND ${n} >= ? `, binds: [100] };
+      default:
+        return { sql: "", binds: [] };
+    }
+  };
+
+  const empF = countBandSql("employeeBand", "total_employee_cnt");
+  const volF = countBandSql("volunteerBand", "total_volunteers_cnt");
+
+  /** Optional `boardBand`: `0_3`, `4`, `5`, `6`, `7`, `8p` (aligned with app `lib/board-band.ts`). */
+  const boardParam = (url.searchParams.get("boardBand") ?? "").trim();
+  const boardCntExpr = `COALESCE(r.governing_body_voting_cnt, r.voting_members_governing_cnt, 0)`;
+  let boardSql = "";
+  const boardBinds: number[] = [];
+  if (boardParam === "0_3") {
+    boardSql = ` AND ${boardCntExpr} >= ? AND ${boardCntExpr} <= ? `;
+    boardBinds.push(0, 3);
+  } else if (boardParam === "4") {
+    boardSql = ` AND ${boardCntExpr} = ? `;
+    boardBinds.push(4);
+  } else if (boardParam === "5") {
+    boardSql = ` AND ${boardCntExpr} = ? `;
+    boardBinds.push(5);
+  } else if (boardParam === "6") {
+    boardSql = ` AND ${boardCntExpr} = ? `;
+    boardBinds.push(6);
+  } else if (boardParam === "7") {
+    boardSql = ` AND ${boardCntExpr} = ? `;
+    boardBinds.push(7);
+  } else if (boardParam === "8p") {
+    boardSql = ` AND ${boardCntExpr} >= ? `;
+    boardBinds.push(8);
+  }
+
+  const stateRaw = (url.searchParams.get("state") ?? "").trim().toUpperCase();
+  let stateSql = "";
+  const stateBinds: string[] = [];
+  if (stateRaw.length === 2 && /^[A-Z]{2}$/.test(stateRaw)) {
+    stateSql = ` AND UPPER(TRIM(r.filer_state)) = ? `;
+    stateBinds.push(stateRaw);
+  }
+
+  try {
+    const orderSql = random
+      ? "ORDER BY RANDOM()"
+      : "ORDER BY r.org_legal_name COLLATE NOCASE";
+    const offsetBind = random ? 0 : offset;
+
+    const stmt = `SELECT r.return_pk, r.ein, r.org_legal_name AS name, r.filer_city AS city, r.filer_state AS state,
+              r.cy_total_revenue_amt, r.py_total_revenue_amt, r.cy_total_expenses_amt, r.py_total_expenses_amt,
+              r.cy_rev_less_expenses_amt, r.net_assets_eoy_amt, r.net_assets_boy_amt,
+              r.cy_contributions_grants_amt, r.cy_program_service_revenue_amt, r.cy_investment_income_amt, r.cy_other_revenue_amt,
+              r.total_program_service_expenses_amt,
+              r.formation_yr, r.total_employee_cnt, r.total_volunteers_cnt,
+              r.tax_yr, r.organization_501c3_ind, r.website_txt,
+              r.mission_desc, r.activity_mission_desc,
+              lc.logo_domain AS logo_cached_domain
+       FROM irs990_xml_returns r
+       INNER JOIN (
+         SELECT ein, MAX(COALESCE(tax_yr, 0)) AS max_ty
+         FROM irs990_xml_returns
+         GROUP BY ein
+       ) latest ON r.ein = latest.ein AND COALESCE(r.tax_yr, 0) = latest.max_ty
+       LEFT JOIN org_logo_cache lc ON lc.ein = r.ein
+       WHERE 1=1 ${excludeSql} ${revenueSql} ${assetsSql} ${reserveSql} ${empF.sql} ${volF.sql} ${boardSql} ${stateSql}
+       ${orderSql}
        LIMIT ? OFFSET ?`;
 
     const rows = await env.DB.prepare(stmt)
-      .bind(...exclude, take, offset)
+      .bind(
+        ...exclude,
+        ...revenueBinds,
+        ...assetsBinds,
+        ...reserveBinds,
+        ...empF.binds,
+        ...volF.binds,
+        ...boardBinds,
+        ...stateBinds,
+        take,
+        offsetBind,
+      )
       .all();
 
     const list = (rows.results ?? []) as Record<string, unknown>[];
     const hasMore = list.length > limit;
     const pageRows = hasMore ? list.slice(0, limit) : list;
 
+    const logoPk = env.LOGO_DEV_PUBLISHABLE_KEY?.trim();
+    if (logoPk) {
+      for (const row of pageRows) {
+        const r = row as Record<string, unknown>;
+        const url = resolveLogoDevImageUrl(
+          String(r.name ?? ""),
+          String(r.website_txt ?? ""),
+          r.logo_cached_domain != null ? String(r.logo_cached_domain) : undefined,
+          logoPk,
+          { size: 72, retina: true },
+        );
+        if (url) r.logo_image_url = url;
+      }
+    }
+
     return json({
       count: pageRows.length,
       rows: pageRows,
       hasMore,
       nextOffset: offset + pageRows.length,
+      random,
       source: "irs990_xml_returns",
     });
   } catch (e) {

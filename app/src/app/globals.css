@@ -69,7 +69,8 @@ input {
 }
 
 ::selection {
-  background: rgba(204, 90, 48, 0.24);
+  background: rgba(37, 99, 235, 0.3);
+  color: inherit;
 }
 
 .deck {
