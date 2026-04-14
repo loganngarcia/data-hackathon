@@ -21,23 +21,23 @@ export default function NavBar() {
       <div className="flex items-center gap-8">
         <Link href="/" className="flex items-center gap-2">
           <span className="text-xl font-bold text-moobu-blue tracking-tight">
-            Moobu
+            Fairlight
           </span>
           <span className="text-[10px] font-medium text-muted bg-moobu-blue-light px-1.5 py-0.5 rounded">
-            BETA
+            ADVISORS
           </span>
         </Link>
         <div className="flex gap-5">
           <Link href="/" className={linkClass("/")}>
-            Portfolio
+            Portfolio X-Ray
           </Link>
           <Link href="/at-risk" className={linkClass("/at-risk")}>
-            At Risk
+            Risk Monitor
           </Link>
         </div>
       </div>
       <span className="text-xs text-muted">
-        Aggies Data Hackathon 2026
+        Nonprofit Financial Resilience Platform
       </span>
     </nav>
   );

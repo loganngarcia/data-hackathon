@@ -99,6 +99,37 @@ export function getInitials(name: string): string {
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
 
+export function formatReserveMonths(
+  netAssets: number | null | undefined,
+  expenses: number | null | undefined,
+): string {
+  if (netAssets == null || expenses == null || expenses === 0) return "N/A";
+  const months = (netAssets / expenses) * 12;
+  if (months < 0) return "0.0 mo";
+  return `${months.toFixed(1)} mo`;
+}
+
+export function reserveMonthsRaw(
+  netAssets: number | null | undefined,
+  expenses: number | null | undefined,
+): number | null {
+  if (netAssets == null || expenses == null || expenses === 0) return null;
+  return (netAssets / expenses) * 12;
+}
+
+export function formatDelta(
+  current: number | null | undefined,
+  previous: number | null | undefined,
+): { text: string; positive: boolean } | null {
+  if (current == null || previous == null || previous === 0) return null;
+  const pctChange = ((current - previous) / Math.abs(previous)) * 100;
+  const sign = pctChange >= 0 ? "+" : "";
+  return {
+    text: `${sign}${pctChange.toFixed(1)}%`,
+    positive: pctChange >= 0,
+  };
+}
+
 // Metric accent colors for score breakdown bars
 const METRIC_COLORS: Record<string, string> = {
   revenue_concentration_hhi: "#8B5CF6",

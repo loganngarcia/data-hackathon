@@ -441,6 +441,183 @@ body {
   transition: stroke-dashoffset 1s ease-out;
 }
 
+/* ========== Professional Data Table ========== */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.data-table thead th {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  background: #F9FAFB;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.data-table thead th:hover {
+  color: var(--foreground);
+}
+
+.data-table tbody tr {
+  border-bottom: 1px solid #F3F4F6;
+  transition: background 0.15s;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: #FAFBFC;
+}
+
+.data-table tbody tr:hover {
+  background: #EFF3FA;
+}
+
+.data-table tbody td {
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+
+.data-table .col-right {
+  text-align: right;
+}
+
+.data-table .col-mono {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+}
+
+/* ========== Metric Widget (small KPI) ========== */
+.metric-widget {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 20px;
+  box-shadow: var(--shadow-widget);
+}
+
+.metric-widget-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.metric-widget-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+/* ========== Delta Arrows (YoY Change Indicators) ========== */
+.delta-positive {
+  color: #10B981;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.delta-negative {
+  color: #EF4444;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.delta-arrow-up::before {
+  content: '\25B2 ';
+  font-size: 9px;
+}
+
+.delta-arrow-down::before {
+  content: '\25BC ';
+  font-size: 9px;
+}
+
+/* ========== Advisory Note (styled callout for recommendations) ========== */
+.advisory-note {
+  background: linear-gradient(135deg, #EFF6FF 0%, #F0F4FA 100%);
+  border: 1px solid #BFDBFE;
+  border-left: 4px solid #3B69B7;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.advisory-note-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #3B69B7;
+  margin-bottom: 6px;
+}
+
+/* ========== Score Mini Bar (inline in table rows) ========== */
+.score-mini-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 80px;
+}
+
+.score-mini-bar-track {
+  width: 48px;
+  height: 6px;
+  background: #F3F4F6;
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.score-mini-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease-out;
+}
+
+/* ========== Row Tier Border (left accent) ========== */
+.row-tier-thriving { border-left: 3px solid #10B981; }
+.row-tier-stable { border-left: 3px solid #3B69B7; }
+.row-tier-needs-support { border-left: 3px solid #F5A623; }
+.row-tier-urgent { border-left: 3px solid #EF4444; }
+
+/* ========== Sortable Column Header ========== */
+.sort-indicator {
+  display: inline-block;
+  font-size: 9px;
+  margin-left: 3px;
+  opacity: 0.5;
+}
+
+.sort-indicator-active {
+  opacity: 1;
+  color: #3B69B7;
+}
+
+/* ========== Risk Severity Row Borders ========== */
+.risk-row-critical {
+  border-left: 3px solid #EF4444;
+}
+
+.risk-row-moderate {
+  border-left: 3px solid #F5A623;
+}
+
 /* ========== Recharts Overrides ========== */
 .recharts-tooltip-wrapper {
   outline: none !important;

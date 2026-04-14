@@ -3,9 +3,9 @@ import "./globals.css";
 import NavBar from "./NavBar";
 
 export const metadata: Metadata = {
-  title: "Moobu | Nonprofit Financial Resilience",
+  title: "Fairlight Advisors | Nonprofit Financial Resilience X-Ray",
   description:
-    "Forward-looking resilience platform for nonprofit financial advisors",
+    "Portfolio-level financial resilience assessment for nonprofit financial advisors",
 };
 
 export default function RootLayout({

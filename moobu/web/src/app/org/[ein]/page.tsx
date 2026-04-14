@@ -23,6 +23,8 @@ import Link from "next/link";
 import {
   formatCurrency,
   formatScore,
+  formatDelta,
+  reserveMonthsRaw,
   metricColor,
 } from "@/lib/utils";
 import ScoreRing from "@/components/ScoreRing";
@@ -30,26 +32,26 @@ import TierBadge from "@/components/TierBadge";
 import PersonCard from "@/components/PersonCard";
 
 const METRIC_LABELS: Record<string, string> = {
-  revenue_concentration_hhi: "Revenue Diversification",
-  operating_reserve_ratio: "Operating Reserves",
-  revenue_growth_trend: "Revenue Growth",
-  expense_vs_revenue_growth: "Expense Control",
-  program_expense_ratio: "Program Efficiency",
+  revenue_concentration_hhi: "Revenue Diversification (HHI)",
+  operating_reserve_ratio: "Operating Reserve Adequacy",
+  revenue_growth_trend: "Revenue Growth (CAGR)",
+  expense_vs_revenue_growth: "Expense Management",
+  program_expense_ratio: "Mission Spending Efficiency",
   revenue_volatility: "Revenue Stability",
-  net_asset_trend: "Asset Growth",
+  net_asset_trend: "Net Asset Growth",
   surplus_deficit_consistency: "Surplus Consistency",
 };
 
-type Tab = "overview" | "people" | "financials" | "risk";
+type Tab = "financial" | "leadership" | "revenue" | "risk";
 
-export default function OrgDetailPage() {
+export default function OrgXRayReport() {
   const params = useParams();
   const ein = params.ein as string;
   const [profile, setProfile] = useState<NonprofitProfile | null>(null);
   const [peers, setPeers] = useState<PeerComparison | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("financial");
 
   useEffect(() => {
     async function load() {
@@ -73,7 +75,7 @@ export default function OrgDetailPage() {
     return (
       <div className="p-12 text-center text-muted">
         <div className="inline-block w-6 h-6 border-2 border-moobu-blue/20 border-t-moobu-blue rounded-full animate-spin mb-3" />
-        <p>Loading profile...</p>
+        <p>Loading X-Ray report...</p>
       </div>
     );
   }
@@ -86,17 +88,17 @@ export default function OrgDetailPage() {
           href="/"
           className="text-moobu-blue text-sm mt-2 inline-block hover:underline"
         >
-          Back to Portfolio
+          Back to Portfolio X-Ray
         </Link>
       </div>
     );
   }
 
-  const tabs: { key: Tab; label: string; icon: string }[] = [
-    { key: "overview", label: "Overview", icon: "grid" },
-    { key: "people", label: "People", icon: "users" },
-    { key: "financials", label: "Financials", icon: "chart" },
-    { key: "risk", label: "Risk", icon: "alert" },
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "financial", label: "Financial Summary" },
+    { key: "leadership", label: "Leadership" },
+    { key: "revenue", label: "Revenue Analysis" },
+    { key: "risk", label: "Risk Assessment" },
   ];
 
   return (
@@ -118,7 +120,7 @@ export default function OrgDetailPage() {
         >
           <polyline points="15 18 9 12 15 6" />
         </svg>
-        Back to Portfolio
+        Back to Portfolio X-Ray
       </Link>
 
       {/* Hero Header */}
@@ -133,6 +135,9 @@ export default function OrgDetailPage() {
 
           {/* Org Info */}
           <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-moobu-blue uppercase tracking-wider mb-1">
+              X-Ray Report
+            </p>
             <div className="flex flex-wrap items-center gap-3 mb-2">
               <h1 className="text-2xl font-bold text-foreground tracking-tight">
                 {profile.org_name || "Unknown Organization"}
@@ -142,7 +147,7 @@ export default function OrgDetailPage() {
 
             {/* Mission */}
             {profile.mission_description && (
-              <p className="text-sm text-muted leading-relaxed mb-4 max-w-[700px]">
+              <p className="text-sm text-muted leading-relaxed mb-4 max-w-[700px] line-clamp-3">
                 {profile.mission_description}
               </p>
             )}
@@ -227,18 +232,39 @@ export default function OrgDetailPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === "overview" && <OverviewTab profile={profile} />}
-      {activeTab === "people" && <PeopleTab profile={profile} />}
-      {activeTab === "financials" && <FinancialsTab profile={profile} />}
-      {activeTab === "risk" && <RiskTab profile={profile} peers={peers} />}
+      {activeTab === "financial" && <FinancialSummaryTab profile={profile} />}
+      {activeTab === "leadership" && <LeadershipTab profile={profile} />}
+      {activeTab === "revenue" && <RevenueAnalysisTab profile={profile} />}
+      {activeTab === "risk" && <RiskAssessmentTab profile={profile} peers={peers} />}
     </div>
   );
 }
 
 /* ============================================================
-   OVERVIEW TAB
+   FINANCIAL SUMMARY TAB
    ============================================================ */
-function OverviewTab({ profile }: { profile: NonprofitProfile }) {
+function FinancialSummaryTab({ profile }: { profile: NonprofitProfile }) {
+  const latest = profile.financials.at(-1);
+  const previous = profile.financials.length >= 2 ? profile.financials.at(-2) : null;
+
+  const revenueDelta = latest && previous
+    ? formatDelta(latest.total_revenue, previous.total_revenue)
+    : null;
+  const expenseDelta = latest && previous
+    ? formatDelta(latest.total_expenses, previous.total_expenses)
+    : null;
+
+  const reserveMonths = latest
+    ? reserveMonthsRaw(latest.net_assets_eoy, latest.total_expenses)
+    : null;
+
+  const programEfficiency = latest && latest.total_expenses
+    ? ((latest.total_expenses - (latest.other_revenue || 0)) / latest.total_expenses * 100)
+    : null;
+
+  // Use metrics for HHI if available
+  const hhi = profile.metrics?.revenue_concentration_hhi;
+
   const metricEntries = profile.metrics
     ? Object.entries(METRIC_LABELS).map(([key, label]) => ({
         key,
@@ -248,42 +274,81 @@ function OverviewTab({ profile }: { profile: NonprofitProfile }) {
       }))
     : [];
 
-  const latest = profile.financials.at(-1);
-
   return (
     <div className="space-y-6 animate-card-in">
-      {/* About card */}
-      <div className="widget-chart p-6">
-        <h2 className="text-lg font-semibold mb-3">About</h2>
-        {profile.mission_description ? (
-          <p className="text-sm text-muted leading-relaxed mb-4">
-            {profile.mission_description}
-          </p>
-        ) : (
-          <p className="text-sm text-muted italic">
-            No mission description available.
-          </p>
-        )}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MiniStat label="EIN" value={profile.ein} />
-          {profile.website && (
-            <MiniStat label="Website" value={profile.website} />
-          )}
-          {profile.formation_year && (
-            <MiniStat label="Founded" value={String(profile.formation_year)} />
-          )}
-          <MiniStat label="Confidence" value={profile.confidence || "N/A"} />
-        </div>
-      </div>
+      {/* Key Metrics Grid (2x3) */}
+      {latest && (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Total Revenue */}
+          <div className="metric-widget">
+            <p className="metric-widget-label">Total Revenue</p>
+            <p className="metric-widget-value text-[#3B69B7]">
+              {formatCurrency(latest.total_revenue)}
+            </p>
+            {revenueDelta && (
+              <span className={revenueDelta.positive ? "delta-positive delta-arrow-up" : "delta-negative delta-arrow-down"}>
+                {revenueDelta.text} YoY
+              </span>
+            )}
+          </div>
 
-      {/* Score Breakdown */}
+          {/* Total Expenses */}
+          <div className="metric-widget">
+            <p className="metric-widget-label">Total Expenses</p>
+            <p className="metric-widget-value text-[#F43F5E]">
+              {formatCurrency(latest.total_expenses)}
+            </p>
+            {expenseDelta && (
+              <span className={!expenseDelta.positive ? "delta-positive delta-arrow-down" : "delta-negative delta-arrow-up"}>
+                {expenseDelta.text} YoY
+              </span>
+            )}
+          </div>
+
+          {/* Net Asset Position */}
+          <div className="metric-widget">
+            <p className="metric-widget-label">Net Asset Position</p>
+            <p className="metric-widget-value text-[#10B981]">
+              {formatCurrency(latest.net_assets_eoy)}
+            </p>
+          </div>
+
+          {/* Operating Reserve */}
+          <div className="metric-widget">
+            <p className="metric-widget-label">Operating Reserve</p>
+            <p className="metric-widget-value text-[#8B5CF6]">
+              {reserveMonths != null ? `${reserveMonths.toFixed(1)}` : "N/A"}
+              <span className="text-sm font-normal text-muted"> months</span>
+            </p>
+          </div>
+
+          {/* Program Efficiency */}
+          <div className="metric-widget">
+            <p className="metric-widget-label">Program Efficiency</p>
+            <p className="metric-widget-value text-[#0891B2]">
+              {programEfficiency != null ? `${programEfficiency.toFixed(1)}%` : "N/A"}
+            </p>
+          </div>
+
+          {/* Revenue Concentration (HHI) */}
+          <div className="metric-widget">
+            <p className="metric-widget-label">Revenue Concentration (HHI)</p>
+            <p className="metric-widget-value text-[#F5A623]">
+              {hhi != null ? `${(hhi * 10).toFixed(1)}` : "N/A"}
+              <span className="text-sm font-normal text-muted"> /10</span>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Resilience Score Breakdown */}
       {metricEntries.length > 0 && (
         <div className="widget-chart p-6">
           <h2 className="text-lg font-semibold mb-1">
             Resilience Score Breakdown
           </h2>
           <p className="text-xs text-muted mb-5">
-            Individual metric scores out of 10
+            Individual metric scores out of 10 -- higher is better
           </p>
           <div className="space-y-4">
             {metricEntries.map((m, i) => (
@@ -299,39 +364,17 @@ function OverviewTab({ profile }: { profile: NonprofitProfile }) {
           </div>
         </div>
       )}
-
-      {/* Key Financial Stats */}
-      {latest && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="widget widget-blue animate-card-in" style={{ animationDelay: "0ms" }}>
-            <p className="kpi-label mb-2">Total Revenue</p>
-            <p className="kpi-number text-[#3B69B7]">
-              {formatCurrency(latest.total_revenue)}
-            </p>
-          </div>
-          <div className="widget widget-rose animate-card-in" style={{ animationDelay: "60ms" }}>
-            <p className="kpi-label mb-2">Total Expenses</p>
-            <p className="kpi-number text-[#F43F5E]">
-              {formatCurrency(latest.total_expenses)}
-            </p>
-          </div>
-          <div className="widget widget-emerald animate-card-in" style={{ animationDelay: "120ms" }}>
-            <p className="kpi-label mb-2">Net Assets</p>
-            <p className="kpi-number text-[#10B981]">
-              {formatCurrency(latest.net_assets_eoy)}
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
 /* ============================================================
-   PEOPLE TAB
+   LEADERSHIP TAB
    ============================================================ */
-function PeopleTab({ profile }: { profile: NonprofitProfile }) {
+function LeadershipTab({ profile }: { profile: NonprofitProfile }) {
   const people = profile.people || [];
+  const officers = people.filter((p) => p.is_officer);
+  const directors = people.filter((p) => p.is_director);
 
   if (people.length === 0) {
     return (
@@ -360,10 +403,23 @@ function PeopleTab({ profile }: { profile: NonprofitProfile }) {
   }
 
   return (
-    <div className="animate-card-in">
-      <p className="text-sm text-muted mb-4">
-        {people.length} officers and directors
-      </p>
+    <div className="animate-card-in space-y-4">
+      {/* Count summary */}
+      <div className="flex gap-4 mb-2">
+        <div className="metric-widget flex-1">
+          <p className="metric-widget-label">Officers</p>
+          <p className="metric-widget-value text-[#3B69B7]">{officers.length}</p>
+        </div>
+        <div className="metric-widget flex-1">
+          <p className="metric-widget-label">Directors</p>
+          <p className="metric-widget-value text-[#10B981]">{directors.length}</p>
+        </div>
+        <div className="metric-widget flex-1">
+          <p className="metric-widget-label">Total</p>
+          <p className="metric-widget-value text-[#8B5CF6]">{people.length}</p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {people.map((person, i) => (
           <PersonCard key={`${person.person_name}-${i}`} person={person} />
@@ -374,9 +430,9 @@ function PeopleTab({ profile }: { profile: NonprofitProfile }) {
 }
 
 /* ============================================================
-   FINANCIALS TAB
+   REVENUE ANALYSIS TAB
    ============================================================ */
-function FinancialsTab({ profile }: { profile: NonprofitProfile }) {
+function RevenueAnalysisTab({ profile }: { profile: NonprofitProfile }) {
   const chartData = profile.financials.map((f) => ({
     year: f.tax_year,
     Revenue: f.total_revenue || 0,
@@ -416,11 +472,11 @@ function FinancialsTab({ profile }: { profile: NonprofitProfile }) {
 
   return (
     <div className="space-y-6 animate-card-in">
-      {/* Revenue & Expenses Area Chart */}
+      {/* Revenue & Expense Trend */}
       <div className="widget-chart p-6">
-        <h2 className="text-lg font-semibold mb-1">Revenue & Expenses</h2>
+        <h2 className="text-lg font-semibold mb-1">Revenue & Expense Trend</h2>
         <p className="text-xs text-muted mb-4">
-          Financial trajectory over time
+          Multi-year financial trajectory
         </p>
         {chartData.length > 0 ? (
           <ResponsiveContainer width="100%" height={320}>
@@ -438,12 +494,12 @@ function FinancialsTab({ profile }: { profile: NonprofitProfile }) {
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
               <XAxis dataKey="year" tick={{ fontSize: 12 }} />
               <YAxis
-                tickFormatter={(v: number) =>
-                  v >= 1e9
-                    ? `$${(v / 1e9).toFixed(1)}B`
-                    : v >= 1e6
-                    ? `$${(v / 1e6).toFixed(1)}M`
-                    : `$${(v / 1e3).toFixed(0)}K`
+                tickFormatter={(v) =>
+                  Number(v) >= 1e9
+                    ? `$${(Number(v) / 1e9).toFixed(1)}B`
+                    : Number(v) >= 1e6
+                    ? `$${(Number(v) / 1e6).toFixed(1)}M`
+                    : `$${(Number(v) / 1e3).toFixed(0)}K`
                 }
                 tick={{ fontSize: 12 }}
               />
@@ -521,49 +577,64 @@ function FinancialsTab({ profile }: { profile: NonprofitProfile }) {
           </div>
         )}
 
-        {/* Year-over-Year Table */}
+        {/* Year-over-Year Financial Summary Table */}
         {yoyData.length > 0 && (
           <div className="widget-chart p-6">
             <h2 className="text-base font-semibold mb-1">
-              Year-over-Year Comparison
+              Year-over-Year Financial Summary
             </h2>
             <p className="text-xs text-muted mb-4">
-              Financial summary by tax year
+              Key metrics with change indicators
             </p>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="data-table">
                 <thead>
-                  <tr className="border-b border-border text-left text-muted">
-                    <th className="px-3 py-2 text-xs font-medium">Year</th>
-                    <th className="px-3 py-2 text-xs font-medium text-right">
-                      Revenue
-                    </th>
-                    <th className="px-3 py-2 text-xs font-medium text-right">
-                      Expenses
-                    </th>
-                    <th className="px-3 py-2 text-xs font-medium text-right">
-                      Net Assets
-                    </th>
+                  <tr>
+                    <th>Year</th>
+                    <th className="col-right">Revenue</th>
+                    <th className="col-right">Expenses</th>
+                    <th className="col-right">Surplus/Deficit</th>
+                    <th className="col-right">Net Assets</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {yoyData.map((f) => (
-                    <tr
-                      key={f.tax_year}
-                      className="border-b border-border/50 hover:bg-gray-50/50 transition-colors"
-                    >
-                      <td className="px-3 py-2.5 font-medium">{f.tax_year}</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-xs">
-                        {formatCurrency(f.total_revenue)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-mono text-xs">
-                        {formatCurrency(f.total_expenses)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-mono text-xs">
-                        {formatCurrency(f.net_assets_eoy)}
-                      </td>
-                    </tr>
-                  ))}
+                  {yoyData.map((f, idx) => {
+                    const nextYear = idx < yoyData.length - 1 ? yoyData[idx + 1] : null;
+                    const revDelta = nextYear
+                      ? formatDelta(f.total_revenue, nextYear.total_revenue)
+                      : null;
+                    return (
+                      <tr key={f.tax_year}>
+                        <td className="font-medium">{f.tax_year}</td>
+                        <td className="col-right col-mono">
+                          {formatCurrency(f.total_revenue)}
+                          {revDelta && (
+                            <span className={`block text-[10px] ${revDelta.positive ? "delta-positive" : "delta-negative"}`}>
+                              {revDelta.positive ? "\u25B2" : "\u25BC"} {revDelta.text}
+                            </span>
+                          )}
+                        </td>
+                        <td className="col-right col-mono">
+                          {formatCurrency(f.total_expenses)}
+                        </td>
+                        <td className="col-right col-mono">
+                          <span
+                            style={{
+                              color:
+                                (f.rev_less_expenses ?? 0) >= 0
+                                  ? "#10B981"
+                                  : "#EF4444",
+                            }}
+                          >
+                            {formatCurrency(f.rev_less_expenses)}
+                          </span>
+                        </td>
+                        <td className="col-right col-mono">
+                          {formatCurrency(f.net_assets_eoy)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -575,9 +646,9 @@ function FinancialsTab({ profile }: { profile: NonprofitProfile }) {
 }
 
 /* ============================================================
-   RISK TAB
+   RISK ASSESSMENT TAB
    ============================================================ */
-function RiskTab({
+function RiskAssessmentTab({
   profile,
   peers,
 }: {
@@ -595,7 +666,7 @@ function RiskTab({
   const gaugeData = vulnPct
     ? [
         {
-          name: "Vulnerability",
+          name: "Risk Probability",
           value: Number(vulnPct),
           fill:
             profile.vulnerability_score! > 0.7
@@ -609,7 +680,7 @@ function RiskTab({
 
   return (
     <div className="space-y-6 animate-card-in">
-      {/* Vulnerability Gauge */}
+      {/* Risk Probability Gauge */}
       <div className="widget-chart p-6">
         <div className="flex flex-wrap items-center gap-8">
           {/* Gauge */}
@@ -645,7 +716,7 @@ function RiskTab({
                       {vulnPct}%
                     </p>
                     <p className="text-[10px] text-muted uppercase tracking-wider">
-                      Vulnerability
+                      Risk Probability
                     </p>
                   </div>
                 </div>
@@ -689,10 +760,10 @@ function RiskTab({
         </div>
       </div>
 
-      {/* Warning Factors */}
+      {/* Risk Indicators */}
       {hasWarnings && (
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold">Early Warning Signals</h2>
+          <h2 className="text-lg font-semibold">Risk Indicators</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {profile.warning_factors!.map((factor, i) => (
               <div
@@ -731,68 +802,57 @@ function RiskTab({
         </div>
       )}
 
-      {/* Recommendation */}
+      {/* Advisory Note */}
       {profile.recommendation && (
-        <div className="callout-box">
-          <p className="text-sm font-semibold text-moobu-blue mb-1">
-            Recommendation
-          </p>
+        <div className="advisory-note">
+          <p className="advisory-note-title">Advisory Note</p>
           <p className="text-sm text-foreground leading-relaxed">
             {profile.recommendation}
           </p>
         </div>
       )}
 
-      {/* Peer Comparison */}
+      {/* Peer Benchmarking */}
       {peers && peers.peers.length > 0 && (
         <div className="widget-chart p-6">
-          <h2 className="text-lg font-semibold mb-1">Peer Comparison</h2>
+          <h2 className="text-lg font-semibold mb-1">Peer Benchmarking</h2>
           <p className="text-sm text-muted mb-4">
             {peers.peers.length} similar organizations in {profile.state}
             {peers.peer_avg_score != null &&
-              ` (peer avg: ${formatScore(peers.peer_avg_score)})`}
+              ` | Peer avg: ${formatScore(peers.peer_avg_score)}`}
           </p>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="data-table">
               <thead>
-                <tr className="border-b border-border text-left text-muted">
-                  <th className="px-4 py-3 text-xs font-medium">
-                    Organization
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-right">
-                    Score
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium">Tier</th>
-                  <th className="px-4 py-3 text-xs font-medium text-right">
-                    Revenue
-                  </th>
+                <tr>
+                  <th>Organization</th>
+                  <th className="col-right">Score</th>
+                  <th>Tier</th>
+                  <th className="col-right">Revenue</th>
                 </tr>
               </thead>
               <tbody>
-                {/* Current org row */}
-                <tr className="border-b border-border bg-moobu-blue-light/40">
-                  <td className="px-4 py-3 font-medium">
+                {/* Current org row highlighted */}
+                <tr style={{ background: "rgba(59, 105, 183, 0.06)" }}>
+                  <td className="font-medium">
                     {profile.org_name || "This Organization"}{" "}
                     <span className="text-xs text-muted">(current)</span>
                   </td>
-                  <td className="px-4 py-3 text-right font-mono font-semibold">
+                  <td className="col-right col-mono font-semibold">
                     {formatScore(profile.composite_score)}
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <TierBadge tier={profile.tier || "Stable"} />
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="col-right col-mono">
                     {formatCurrency(
                       profile.financials.at(-1)?.total_revenue ?? null
                     )}
                   </td>
                 </tr>
                 {peers.peers.map((peer) => (
-                  <tr
-                    key={peer.ein}
-                    className="border-b border-border/50 hover:bg-gray-50 transition-colors"
-                  >
-                    <td className="px-4 py-3">
+                  <tr key={peer.ein}>
+                    <td>
                       <Link
                         href={`/org/${peer.ein}`}
                         className="hover:text-moobu-blue transition-colors"
@@ -800,13 +860,13 @@ function RiskTab({
                         {peer.org_name || "Unknown"}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-right font-mono">
+                    <td className="col-right col-mono">
                       {formatScore(peer.composite_score)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <TierBadge tier={peer.tier || "Stable"} />
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="col-right col-mono">
                       {formatCurrency(peer.latest_total_revenue)}
                     </td>
                   </tr>
@@ -817,7 +877,7 @@ function RiskTab({
         </div>
       )}
 
-      {/* No risk info */}
+      {/* No risk info fallback */}
       {!hasWarnings && !profile.recommendation && vulnPct == null && (
         <div className="text-center py-12 text-muted">
           <svg
@@ -847,15 +907,6 @@ function RiskTab({
    SHARED COMPONENTS
    ============================================================ */
 
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs text-muted mb-0.5">{label}</p>
-      <p className="text-sm font-semibold text-foreground truncate">{value}</p>
-    </div>
-  );
-}
-
 function ColorMetricBar({
   label,
   value,
@@ -876,7 +927,7 @@ function ColorMetricBar({
       className="flex items-center gap-3 animate-slide-in"
       style={{ animationDelay: `${index * 50}ms` }}
     >
-      <span className="text-xs text-muted w-36 text-right flex-shrink-0">
+      <span className="text-xs text-muted w-48 text-right flex-shrink-0">
         {label}
       </span>
       <div className="metric-bar-track flex-1">
