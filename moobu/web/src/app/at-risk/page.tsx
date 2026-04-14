@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchAtRisk } from "@/lib/api";
 import type { AtRiskOrg } from "@/lib/types";
 import Link from "next/link";
-import TierBadge from "@/components/TierBadge";
+import ResilienceGauge from "@/components/ResilienceGauge";
 
 export default function RiskMonitorPage() {
   const [orgs, setOrgs] = useState<AtRiskOrg[]>([]);
@@ -28,9 +28,13 @@ export default function RiskMonitorPage() {
 
   if (loading) {
     return (
-      <div className="p-12 text-center text-muted">
-        <div className="inline-block w-6 h-6 border-2 border-moobu-orange/20 border-t-moobu-orange rounded-full animate-spin mb-3" />
-        <p>Loading risk monitor...</p>
+      <div className="p-12 text-center text-ink-tertiary">
+        <div
+          className="inline-block w-5 h-5 border-2 border-status-attention/20 border-t-status-attention rounded-full mb-3"
+          style={{ animation: "spin 0.8s linear infinite" }}
+        />
+        <p className="text-sm">Loading risk monitor...</p>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     );
   }
@@ -38,127 +42,56 @@ export default function RiskMonitorPage() {
   if (error) {
     return (
       <div className="p-8 text-center">
-        <p className="text-red-600 text-lg">{error}</p>
+        <p className="text-status-urgent text-base">{error}</p>
       </div>
     );
   }
 
   const criticalCount = orgs.filter((o) => o.vulnerability_score > 0.7).length;
   const totalAtRisk = orgs.length;
-  const portfolioAtRiskPct =
+  const criticalPct =
     totalAtRisk > 0 ? ((criticalCount / totalAtRisk) * 100).toFixed(1) : "0";
 
   return (
-    <div className="p-6 max-w-[1440px] mx-auto">
-      {/* Header */}
-      <div className="mb-6 animate-card-in">
-        <h1 className="text-3xl font-bold text-foreground tracking-tight">
-          <span className="text-moobu-orange">Risk</span> Monitor
-        </h1>
-        <p className="text-muted text-sm mt-1">
-          Early-warning system for organizations showing pre-crisis financial
-          patterns. Ranked by risk probability score.
-        </p>
-      </div>
-
-      {/* Summary KPI Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-        <div
-          className="widget widget-orange animate-card-in"
-          style={{ animationDelay: "0ms" }}
-        >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-xl bg-[#F5A623]/10 flex items-center justify-center">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#F5A623"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-            </div>
-            <span className="kpi-label">Total Flagged</span>
-          </div>
-          <p className="kpi-number text-[#F5A623]">{totalAtRisk}</p>
+    <div className="px-6 py-5 max-w-[1440px] mx-auto">
+      {/* Summary Strip */}
+      <div
+        className="flex items-center divide-x mb-5"
+        style={{ borderColor: "var(--boundary)" }}
+      >
+        <div className="pr-5">
+          <p className="text-xs text-ink-tertiary" style={{ letterSpacing: "0.02em" }}>Flagged</p>
+          <p className="text-xl tabular-nums text-ink" style={{ fontWeight: 600 }}>
+            {totalAtRisk}
+          </p>
         </div>
-
-        <div
-          className="widget widget-rose animate-card-in"
-          style={{ animationDelay: "60ms" }}
-        >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-xl bg-[#EF4444]/10 flex items-center justify-center">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#EF4444"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="15" y1="9" x2="9" y2="15" />
-                <line x1="9" y1="9" x2="15" y2="15" />
-              </svg>
-            </div>
-            <span className="kpi-label">Critical ({">"}70% Risk)</span>
-          </div>
-          <p className="kpi-number text-[#EF4444]">{criticalCount}</p>
+        <div className="px-5">
+          <p className="text-xs text-ink-tertiary" style={{ letterSpacing: "0.02em" }}>Critical</p>
+          <p className="text-xl tabular-nums text-ink" style={{ fontWeight: 600 }}>
+            {criticalCount}
+          </p>
         </div>
-
-        <div
-          className="widget widget-purple animate-card-in"
-          style={{ animationDelay: "120ms" }}
-        >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-xl bg-[#8B5CF6]/10 flex items-center justify-center">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#8B5CF6"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="12" y1="20" x2="12" y2="10" />
-                <line x1="18" y1="20" x2="18" y2="4" />
-                <line x1="6" y1="20" x2="6" y2="16" />
-              </svg>
-            </div>
-            <span className="kpi-label">Critical % of Flagged</span>
-          </div>
-          <p className="kpi-number text-[#8B5CF6]">{portfolioAtRiskPct}%</p>
+        <div className="px-5">
+          <p className="text-xs text-ink-tertiary" style={{ letterSpacing: "0.02em" }}>Critical Rate</p>
+          <p className="text-xl tabular-nums text-ink" style={{ fontWeight: 600 }}>
+            {criticalPct}%
+          </p>
         </div>
       </div>
 
-      {/* Priority List Table */}
-      <div className="widget-chart p-0 overflow-hidden animate-card-in" style={{ animationDelay: "180ms" }}>
+      {/* Table */}
+      <div className="card-flush">
         <div className="overflow-x-auto">
           <table className="data-table">
             <thead>
               <tr>
                 <th style={{ width: 50 }}>Rank</th>
                 <th style={{ minWidth: 240 }}>Organization</th>
-                <th style={{ width: 60 }}>State</th>
-                <th className="col-right" style={{ width: 100 }}>
-                  Resilience
-                </th>
-                <th className="col-right" style={{ width: 110 }}>
-                  Risk Probability
-                </th>
-                <th style={{ minWidth: 180 }}>Key Risk Factor</th>
-                <th style={{ minWidth: 200 }}>Recommended Action</th>
+                <th style={{ width: 55 }}>State</th>
+                <th style={{ minWidth: 140 }}>Resilience</th>
+                <th className="col-right" style={{ width: 100 }}>Risk %</th>
+                <th style={{ minWidth: 180 }}>Key Factor</th>
+                <th style={{ minWidth: 200 }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -178,14 +111,15 @@ export default function RiskMonitorPage() {
                     }
                   >
                     <td>
-                      <span className="text-sm font-bold text-muted/40 tabular-nums">
+                      <span className="text-sm text-ink-muted tabular-nums" style={{ fontWeight: 600 }}>
                         #{i + 1}
                       </span>
                     </td>
                     <td>
                       <Link
                         href={`/org/${org.ein}`}
-                        className="font-semibold text-sm hover:text-moobu-blue transition-colors"
+                        className="text-sm hover:text-brand"
+                        style={{ fontWeight: 500 }}
                         onClick={(e) => e.stopPropagation()}
                       >
                         {org.org_name || "Unknown"}
@@ -195,18 +129,16 @@ export default function RiskMonitorPage() {
                           {org.factors.map((f, j) => (
                             <div
                               key={j}
-                              className="flex items-center gap-1.5 text-[11px] text-muted"
+                              className="flex items-center gap-1.5 text-xs text-ink-tertiary"
                             >
-                              <svg
-                                width="10"
-                                height="10"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke={isCritical ? "#EF4444" : "#F5A623"}
-                                strokeWidth="2.5"
-                              >
-                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                              </svg>
+                              <span
+                                className="inline-block w-1 h-1 rounded-full flex-shrink-0"
+                                style={{
+                                  backgroundColor: isCritical
+                                    ? "var(--status-urgent)"
+                                    : "var(--status-attention)",
+                                }}
+                              />
                               {f}
                             </div>
                           ))}
@@ -214,56 +146,37 @@ export default function RiskMonitorPage() {
                       )}
                     </td>
                     <td>
-                      <span className="text-xs text-muted bg-gray-100 px-1.5 py-0.5 rounded">
+                      <span className="text-xs text-ink-tertiary">
                         {org.state || "--"}
                       </span>
                     </td>
-                    <td className="col-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <span className="text-xs font-mono font-semibold tabular-nums">
-                          {org.composite_score != null
-                            ? org.composite_score.toFixed(1)
-                            : "--"}
-                        </span>
-                        <TierBadge tier={org.tier || "Urgent"} />
-                      </div>
-                    </td>
-                    <td className="col-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${vulnPct}%`,
-                              background: isCritical
-                                ? "linear-gradient(90deg, #EF4444, #F87171)"
-                                : "linear-gradient(90deg, #F5A623, #FBBF24)",
-                            }}
-                          />
-                        </div>
-                        <span
-                          className="text-xs font-semibold tabular-nums"
-                          style={{
-                            color: isCritical ? "#EF4444" : "#F5A623",
-                          }}
-                        >
-                          {vulnPct}%
-                        </span>
-                      </div>
-                    </td>
                     <td>
+                      <ResilienceGauge
+                        score={org.composite_score ?? 0}
+                        tier={org.tier ?? "Urgent"}
+                        size="sm"
+                      />
+                    </td>
+                    <td className="col-right">
                       <span
-                        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
+                        className="text-xs tabular-nums"
                         style={{
-                          background: isCritical ? "#FEE2E2" : "#FEF3E2",
-                          color: isCritical ? "#991B1B" : "#92400E",
+                          fontWeight: 600,
+                          color: isCritical
+                            ? "var(--status-urgent)"
+                            : "var(--status-attention)",
                         }}
                       >
+                        {vulnPct}%
+                      </span>
+                    </td>
+                    <td>
+                      <span className="text-xs text-ink-secondary">
                         {org.factors[0] || "Multiple factors"}
                       </span>
                     </td>
                     <td>
-                      <span className="text-xs text-muted leading-relaxed line-clamp-2">
+                      <span className="text-xs text-ink-tertiary leading-relaxed line-clamp-2">
                         {org.recommendation}
                       </span>
                     </td>
@@ -276,11 +189,10 @@ export default function RiskMonitorPage() {
       </div>
 
       {orgs.length === 0 && (
-        <div className="text-center py-16 text-muted">
-          <p className="text-lg">No at-risk organizations detected.</p>
+        <div className="text-center py-16 text-ink-tertiary">
+          <p className="text-base">No at-risk organizations detected.</p>
           <p className="text-sm mt-1">
-            All organizations in the portfolio are showing healthy financial
-            patterns.
+            All organizations are showing healthy financial patterns.
           </p>
         </div>
       )}

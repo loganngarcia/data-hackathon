@@ -12,7 +12,7 @@ export default function PersonCard({ person }: PersonCardProps) {
   const initials = getInitials(person.person_name);
 
   return (
-    <div className="glass-card p-4 flex items-start gap-3 hover:shadow-lg transition-all duration-200">
+    <div className="card flex items-start gap-3">
       {/* Avatar */}
       <div
         className="avatar-circle flex-shrink-0"
@@ -23,21 +23,21 @@ export default function PersonCard({ person }: PersonCardProps) {
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm text-foreground truncate">
+        <p className="text-sm text-ink truncate" style={{ fontWeight: 500 }}>
           {person.person_name}
         </p>
         {person.title && (
-          <p className="text-xs text-muted truncate">{person.title}</p>
+          <p className="text-xs text-ink-tertiary truncate">{person.title}</p>
         )}
 
         <div className="flex flex-wrap items-center gap-2 mt-2">
           {person.avg_hours_per_week != null && person.avg_hours_per_week > 0 && (
-            <span className="text-xs text-muted">
+            <span className="text-xs text-ink-muted">
               {person.avg_hours_per_week}h/wk
             </span>
           )}
           {person.compensation != null && person.compensation > 0 && (
-            <span className="text-xs text-muted">
+            <span className="text-xs text-ink-muted">
               {formatCurrency(person.compensation)}
             </span>
           )}

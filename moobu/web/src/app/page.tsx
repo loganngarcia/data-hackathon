@@ -1,17 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 import { fetchNonprofits, fetchOverview } from "@/lib/api";
 import type {
   NonprofitSummary,
@@ -23,27 +12,11 @@ import {
   formatCurrency,
   formatScore,
   formatReserveMonths,
-  tierColor,
+  reserveMonthsRaw,
 } from "@/lib/utils";
-import ScoreRing from "@/components/ScoreRing";
-import TierBadge from "@/components/TierBadge";
+import ResilienceGauge from "@/components/ResilienceGauge";
 
-const PAGE_SIZE = 25;
-
-const BUCKET_COLORS: Record<string, string> = {
-  "75-100 Thriving": "#10B981",
-  "50-74 Stable": "#3B69B7",
-  "25-49 Needs Support": "#F5A623",
-  "0-24 Urgent": "#EF4444",
-};
-
-const RESERVE_COLORS = [
-  "#EF4444",
-  "#F5A623",
-  "#3B69B7",
-  "#8B5CF6",
-  "#10B981",
-];
+const PAGE_SIZE = 50;
 
 function rowTierClass(tier: string | null | undefined): string {
   switch (tier) {
@@ -60,7 +33,7 @@ function rowTierClass(tier: string | null | undefined): string {
   }
 }
 
-export default function PortfolioXRayPage() {
+export default function PortfolioPage() {
   const [data, setData] = useState<PaginatedNonprofits | null>(null);
   const [stats, setStats] = useState<OverviewStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,11 +87,11 @@ export default function PortfolioXRayPage() {
   if (error) {
     return (
       <div className="p-8 text-center">
-        <p className="text-red-600 text-lg mb-2">Failed to load data</p>
-        <p className="text-muted text-sm">{error}</p>
-        <p className="text-muted text-sm mt-2">
+        <p className="text-status-urgent text-base mb-2">Failed to load data</p>
+        <p className="text-ink-tertiary text-sm">{error}</p>
+        <p className="text-ink-tertiary text-sm mt-2">
           Make sure the API is running:{" "}
-          <code className="bg-gray-100 px-1 rounded">
+          <code className="bg-paper-inset px-1.5 py-0.5 rounded text-xs">
             cd moobu/api && uvicorn moobu_api.main:app
           </code>
         </p>
@@ -128,321 +101,52 @@ export default function PortfolioXRayPage() {
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
   const thrivingCount = stats?.score_distribution["Thriving"] || 0;
+  const needsAttentionCount =
+    (stats?.score_distribution["Needs Support"] || 0) +
+    (stats?.score_distribution["Urgent"] || 0);
 
-  // Resilience distribution bar chart data (buckets)
-  const distributionData = stats
-    ? [
-        {
-          name: "0-24 Urgent",
-          count: stats.score_distribution["Urgent"] || 0,
-          color: BUCKET_COLORS["0-24 Urgent"],
-        },
-        {
-          name: "25-49 Needs Support",
-          count: stats.score_distribution["Needs Support"] || 0,
-          color: BUCKET_COLORS["25-49 Needs Support"],
-        },
-        {
-          name: "50-74 Stable",
-          count: stats.score_distribution["Stable"] || 0,
-          color: BUCKET_COLORS["50-74 Stable"],
-        },
-        {
-          name: "75-100 Thriving",
-          count: stats.score_distribution["Thriving"] || 0,
-          color: BUCKET_COLORS["75-100 Thriving"],
-        },
-      ]
-    : [];
-
-  // Operating reserve analysis (mock distribution based on tier data)
-  const reserveData = [
-    { name: "<1 month", value: Math.round((stats?.score_distribution["Urgent"] || 0) * 0.7), color: RESERVE_COLORS[0] },
-    { name: "1-3 months", value: Math.round((stats?.score_distribution["Needs Support"] || 0) * 0.5), color: RESERVE_COLORS[1] },
-    { name: "3-6 months", value: Math.round((stats?.score_distribution["Stable"] || 0) * 0.4), color: RESERVE_COLORS[2] },
-    { name: "6-12 months", value: Math.round((stats?.score_distribution["Stable"] || 0) * 0.3 + (stats?.score_distribution["Thriving"] || 0) * 0.3), color: RESERVE_COLORS[3] },
-    { name: ">12 months", value: Math.round((stats?.score_distribution["Thriving"] || 0) * 0.5), color: RESERVE_COLORS[4] },
-  ].filter((d) => d.value > 0);
-
-  // Geographic distribution
-  const stateChartData = stats
-    ? Object.entries(stats.state_distribution)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 10)
-        .map(([state, count]) => ({ state, count }))
-    : [];
-
-  const sortIndicator = (col: string) => {
+  const sortArrow = (col: string) => {
     if (sortBy !== col) return "";
     return sortDir === "asc" ? " \u25B2" : " \u25BC";
   };
 
+  const startItem = (page - 1) * PAGE_SIZE + 1;
+  const endItem = data ? Math.min(page * PAGE_SIZE, data.total) : 0;
+
   return (
-    <div className="p-6 max-w-[1440px] mx-auto">
-      {/* Header */}
-      <div className="mb-6 animate-card-in">
-        <h1 className="text-3xl font-bold text-foreground tracking-tight">
-          <span className="text-moobu-blue">Portfolio</span> X-Ray
-        </h1>
-        <p className="text-muted text-sm mt-1">
-          Financial resilience assessment across{" "}
-          {stats?.scored_orgs.toLocaleString() || "..."} nonprofit organizations
-        </p>
-      </div>
-
-      {/* KPI Widget Row */}
+    <div className="px-6 py-5 max-w-[1440px] mx-auto">
+      {/* Summary Strip */}
       {stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {/* Portfolio Coverage */}
-          <div
-            className="widget widget-blue animate-card-in"
-            style={{ animationDelay: "0ms" }}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-xl bg-[#3B69B7]/10 flex items-center justify-center">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#3B69B7"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="2" y="7" width="20" height="14" rx="2" />
-                  <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-                </svg>
-              </div>
-              <span className="kpi-label">Portfolio Coverage</span>
-            </div>
-            <p className="kpi-number text-[#3B69B7]">
-              {stats.scored_orgs.toLocaleString()}
-            </p>
-            <p className="text-xs text-muted mt-1">Organizations Assessed</p>
-          </div>
-
-          {/* Avg Resilience Score */}
-          <div
-            className="widget widget-green animate-card-in"
-            style={{ animationDelay: "60ms" }}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <ScoreRing
-                score={stats.avg_score}
-                tier={
-                  stats.avg_score >= 70
-                    ? "Thriving"
-                    : stats.avg_score >= 50
-                    ? "Stable"
-                    : "Needs Support"
-                }
-                size={40}
-              />
-              <span className="kpi-label">Avg Resilience Score</span>
-            </div>
-            <p className="kpi-number text-[#10B981]">
-              {formatScore(stats.avg_score)}
-              <span className="text-sm font-normal text-muted"> /100</span>
-            </p>
-          </div>
-
-          {/* Needs Attention */}
-          <div
-            className="widget widget-orange animate-card-in"
-            style={{ animationDelay: "120ms" }}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-xl bg-[#F5A623]/10 flex items-center justify-center">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#F5A623"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                  <line x1="12" y1="9" x2="12" y2="13" />
-                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-              </div>
-              <span className="kpi-label">Needs Attention</span>
-            </div>
-            <p className="kpi-number text-[#F5A623]">
-              {stats.at_risk_orgs.toLocaleString()}
-            </p>
-            <p className="text-xs text-muted mt-1">At-Risk Organizations</p>
-          </div>
-
-          {/* Healthy Portfolio */}
-          <div
-            className="widget widget-emerald animate-card-in"
-            style={{ animationDelay: "180ms" }}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-xl bg-[#10B981]/10 flex items-center justify-center">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#10B981"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                  <polyline points="22 4 12 14.01 9 11.01" />
-                </svg>
-              </div>
-              <span className="kpi-label">Healthy Portfolio</span>
-            </div>
-            <p className="kpi-number text-[#10B981]">
-              {thrivingCount.toLocaleString()}
-            </p>
-            <p className="text-xs text-muted mt-1">Thriving Organizations</p>
-          </div>
+        <div
+          className="flex items-center divide-x mb-5"
+          style={{ borderColor: "var(--boundary)" }}
+        >
+          <SummaryStat
+            label="Organizations"
+            value={stats.scored_orgs.toLocaleString()}
+          />
+          <SummaryStat
+            label="Avg Score"
+            value={`${formatScore(stats.avg_score)} / 100`}
+          />
+          <SummaryStat
+            label="Need Attention"
+            value={needsAttentionCount.toLocaleString()}
+          />
+          <SummaryStat
+            label="Thriving"
+            value={thrivingCount.toLocaleString()}
+          />
         </div>
       )}
 
-      {/* Charts Row - 3 charts side by side */}
-      {stats && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          {/* LEFT: Resilience Distribution Bar Chart */}
-          <div className="widget-chart animate-card-in" style={{ animationDelay: "200ms" }}>
-            <h3 className="text-base font-semibold text-foreground mb-1">
-              Resilience Distribution
-            </h3>
-            <p className="text-xs text-muted mb-4">
-              Score distribution across assessment tiers
-            </p>
-            {distributionData.length > 0 && (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart
-                  data={distributionData}
-                  margin={{ left: 0, right: 8, top: 4, bottom: 4 }}
-                >
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 10 }}
-                    interval={0}
-                    angle={-15}
-                    textAnchor="end"
-                    height={50}
-                  />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    formatter={(value) => [`${value} organizations`, "Count"]}
-                  />
-                  <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={36}>
-                    {distributionData.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          {/* CENTER: Operating Reserve Analysis Donut */}
-          <div className="widget-chart animate-card-in" style={{ animationDelay: "260ms" }}>
-            <h3 className="text-base font-semibold text-foreground mb-1">
-              Operating Reserve Analysis
-            </h3>
-            <p className="text-xs text-muted mb-4">
-              Estimated reserve months across portfolio
-            </p>
-            {reserveData.length > 0 && (
-              <>
-                <ResponsiveContainer width="100%" height={180}>
-                  <PieChart>
-                    <Pie
-                      data={reserveData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={45}
-                      outerRadius={75}
-                      paddingAngle={3}
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      {reserveData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value) => [`${value} orgs`, ""]}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-1 justify-center">
-                  {reserveData.map((entry) => (
-                    <div key={entry.name} className="flex items-center gap-1.5">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full inline-block"
-                        style={{ backgroundColor: entry.color }}
-                      />
-                      <span className="text-[11px] text-muted">
-                        {entry.name}{" "}
-                        <span className="font-semibold text-foreground">
-                          {entry.value}
-                        </span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* RIGHT: Geographic Distribution */}
-          {stateChartData.length > 0 && (
-            <div className="widget-chart animate-card-in" style={{ animationDelay: "320ms" }}>
-              <h3 className="text-base font-semibold text-foreground mb-1">
-                Geographic Distribution
-              </h3>
-              <p className="text-xs text-muted mb-4">
-                Top 10 states by organization count
-              </p>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart
-                  data={stateChartData}
-                  layout="vertical"
-                  margin={{ left: 4, right: 16, top: 4, bottom: 4 }}
-                >
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis
-                    type="category"
-                    dataKey="state"
-                    tick={{ fontSize: 12, fontWeight: 500 }}
-                    width={32}
-                  />
-                  <Tooltip
-                    formatter={(value) => [`${value} organizations`, "Count"]}
-                  />
-                  <Bar
-                    dataKey="count"
-                    fill="#3B69B7"
-                    radius={[0, 6, 6, 0]}
-                    barSize={18}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Search + Filters Bar */}
-      <div className="widget-chart p-4 mb-6 flex flex-wrap gap-3 items-center">
+      {/* Filters Bar */}
+      <div className="flex flex-wrap gap-3 items-center mb-5">
         <div className="relative flex-1 min-w-[220px]">
           <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-            width="16"
-            height="16"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+            width="15"
+            height="15"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -455,13 +159,17 @@ export default function PortfolioXRayPage() {
           </svg>
           <input
             type="text"
-            placeholder="Search by name or EIN..."
+            placeholder="Search organizations..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
             }}
-            className="w-full border border-border rounded-xl pl-9 pr-3 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-moobu-blue/20 focus:border-moobu-blue transition-colors"
+            className="w-full rounded-md pl-9 pr-3 text-sm bg-paper-inset text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand/30"
+            style={{
+              height: 36,
+              border: "1px solid transparent",
+            }}
           />
         </div>
         <select
@@ -470,7 +178,8 @@ export default function PortfolioXRayPage() {
             setStateFilter(e.target.value);
             setPage(1);
           }}
-          className="border border-border rounded-xl px-3 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-moobu-blue/20"
+          className="rounded-md px-3 text-sm bg-paper-inset text-ink focus:outline-none focus:ring-1 focus:ring-brand/30"
+          style={{ height: 36, border: "1px solid transparent" }}
         >
           <option value="">All States</option>
           {[
@@ -487,7 +196,8 @@ export default function PortfolioXRayPage() {
             setTierFilter(e.target.value);
             setPage(1);
           }}
-          className="border border-border rounded-xl px-3 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-moobu-blue/20"
+          className="rounded-md px-3 text-sm bg-paper-inset text-ink focus:outline-none focus:ring-1 focus:ring-brand/30"
+          style={{ height: 36, border: "1px solid transparent" }}
         >
           <option value="">All Tiers</option>
           <option value="Thriving">Thriving</option>
@@ -495,17 +205,46 @@ export default function PortfolioXRayPage() {
           <option value="Needs Support">Needs Support</option>
           <option value="Urgent">Urgent</option>
         </select>
+        {/* Sort controls */}
+        <div className="flex items-center gap-1 text-xs text-ink-tertiary ml-auto">
+          <span>Sort:</span>
+          <SortButton
+            label="Score"
+            col="composite_score"
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={handleSort}
+          />
+          <SortButton
+            label="Revenue"
+            col="latest_total_revenue"
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={handleSort}
+          />
+          <SortButton
+            label="Name"
+            col="org_name"
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={handleSort}
+          />
+        </div>
       </div>
 
       {/* Data Table */}
       {loading ? (
-        <div className="p-12 text-center text-muted">
-          <div className="inline-block w-6 h-6 border-2 border-moobu-blue/20 border-t-moobu-blue rounded-full animate-spin mb-3" />
-          <p>Loading organizations...</p>
+        <div className="p-12 text-center text-ink-tertiary">
+          <div
+            className="inline-block w-5 h-5 border-2 border-brand/20 border-t-brand rounded-full mb-3"
+            style={{ animation: "spin 0.8s linear infinite" }}
+          />
+          <p className="text-sm">Loading organizations...</p>
+          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </div>
       ) : data ? (
         <>
-          <div className="widget-chart p-0 overflow-hidden mb-6">
+          <div className="card-flush mb-4">
             <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
@@ -515,18 +254,22 @@ export default function PortfolioXRayPage() {
                       style={{ minWidth: 240 }}
                     >
                       Organization
-                      <span className={`sort-indicator ${sortBy === "org_name" ? "sort-indicator-active" : ""}`}>
-                        {sortIndicator("org_name") || " \u25B4\u25BE"}
+                      <span
+                        className={`sort-indicator ${sortBy === "org_name" ? "sort-indicator-active" : ""}`}
+                      >
+                        {sortArrow("org_name") || " \u25B4\u25BE"}
                       </span>
                     </th>
-                    <th style={{ width: 60 }}>State</th>
+                    <th style={{ width: 55 }}>State</th>
                     <th
                       onClick={() => handleSort("composite_score")}
-                      style={{ minWidth: 140 }}
+                      style={{ minWidth: 160 }}
                     >
-                      Resilience Score
-                      <span className={`sort-indicator ${sortBy === "composite_score" ? "sort-indicator-active" : ""}`}>
-                        {sortIndicator("composite_score") || " \u25B4\u25BE"}
+                      Resilience
+                      <span
+                        className={`sort-indicator ${sortBy === "composite_score" ? "sort-indicator-active" : ""}`}
+                      >
+                        {sortArrow("composite_score") || " \u25B4\u25BE"}
                       </span>
                     </th>
                     <th
@@ -535,25 +278,26 @@ export default function PortfolioXRayPage() {
                       style={{ minWidth: 100 }}
                     >
                       Revenue
-                      <span className={`sort-indicator ${sortBy === "latest_total_revenue" ? "sort-indicator-active" : ""}`}>
-                        {sortIndicator("latest_total_revenue") || " \u25B4\u25BE"}
+                      <span
+                        className={`sort-indicator ${sortBy === "latest_total_revenue" ? "sort-indicator-active" : ""}`}
+                      >
+                        {sortArrow("latest_total_revenue") || " \u25B4\u25BE"}
                       </span>
                     </th>
                     <th className="col-right" style={{ minWidth: 100 }}>
                       Net Assets
                     </th>
-                    <th className="col-right" style={{ minWidth: 100 }}>
-                      Op. Reserve
+                    <th className="col-right" style={{ minWidth: 90 }}>
+                      Reserve
                     </th>
-                    <th style={{ width: 110 }}>Risk Level</th>
-                    <th className="col-right" style={{ width: 90 }}>
-                      Vulnerability
+                    <th className="col-right" style={{ width: 80 }}>
+                      Risk
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.items.map((org, index) => (
-                    <OrgRow key={org.ein} org={org} index={index} />
+                  {data.items.map((org) => (
+                    <OrgRow key={org.ein} org={org} />
                   ))}
                 </tbody>
               </table>
@@ -561,8 +305,8 @@ export default function PortfolioXRayPage() {
           </div>
 
           {data.items.length === 0 && (
-            <div className="text-center py-16 text-muted">
-              <p className="text-lg mb-1">No organizations found</p>
+            <div className="text-center py-16 text-ink-tertiary">
+              <p className="text-base mb-1">No organizations found</p>
               <p className="text-sm">
                 Try adjusting your filters or search terms.
               </p>
@@ -570,23 +314,26 @@ export default function PortfolioXRayPage() {
           )}
 
           {/* Pagination */}
-          <div className="flex items-center justify-between text-sm text-muted">
-            <span>{data.total.toLocaleString()} organizations</span>
+          <div className="flex items-center justify-between text-sm text-ink-tertiary">
+            <span>
+              Showing {startItem}--{endItem} of{" "}
+              {data.total.toLocaleString()}
+            </span>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage(Math.max(1, page - 1))}
                 disabled={page <= 1}
-                className="px-4 py-2 border border-border rounded-xl disabled:opacity-40 hover:bg-white transition-colors font-medium"
+                className="px-3 py-1.5 text-sm text-ink-secondary disabled:text-ink-muted hover:text-ink"
               >
-                Previous
+                Prev
               </button>
-              <span className="px-3 py-2 text-foreground font-semibold">
+              <span className="text-ink tabular-nums" style={{ fontWeight: 500 }}>
                 {page} / {totalPages}
               </span>
               <button
                 onClick={() => setPage(page + 1)}
                 disabled={page >= totalPages}
-                className="px-4 py-2 border border-border rounded-xl disabled:opacity-40 hover:bg-white transition-colors font-medium"
+                className="px-3 py-1.5 text-sm text-ink-secondary disabled:text-ink-muted hover:text-ink"
               >
                 Next
               </button>
@@ -598,74 +345,112 @@ export default function PortfolioXRayPage() {
   );
 }
 
+/* ========== Summary Stat ========== */
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="px-5 first:pl-0">
+      <p className="text-xs text-ink-tertiary" style={{ letterSpacing: "0.02em" }}>
+        {label}
+      </p>
+      <p
+        className="text-xl tabular-nums text-ink"
+        style={{ fontWeight: 600 }}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/* ========== Sort Button ========== */
+function SortButton({
+  label,
+  col,
+  sortBy,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  col: string;
+  sortBy: string;
+  sortDir: string;
+  onSort: (col: string) => void;
+}) {
+  const active = sortBy === col;
+  const arrow = active ? (sortDir === "asc" ? " \u2191" : " \u2193") : "";
+  return (
+    <button
+      onClick={() => onSort(col)}
+      className={`px-2 py-1 rounded text-xs ${
+        active ? "text-brand" : "text-ink-tertiary hover:text-ink-secondary"
+      }`}
+      style={{ fontWeight: active ? 600 : 400 }}
+    >
+      {label}
+      {arrow}
+    </button>
+  );
+}
+
 /* ========== Organization Table Row ========== */
-function OrgRow({ org, index }: { org: NonprofitSummary; index: number }) {
-  const score = org.composite_score ?? 0;
-  const color = tierColor(org.tier);
-  const scorePct = Math.min(Math.max(score, 0), 100);
+function OrgRow({ org }: { org: NonprofitSummary }) {
   const reserveText = formatReserveMonths(
     org.latest_net_assets,
     org.latest_total_expenses
   );
-  const vulnPct =
+  const reserveMonths = reserveMonthsRaw(
+    org.latest_net_assets,
+    org.latest_total_expenses
+  );
+
+  // Reserve dot color
+  const reserveDotColor =
+    reserveMonths != null
+      ? reserveMonths > 6
+        ? "var(--status-healthy)"
+        : reserveMonths >= 3
+        ? "var(--status-attention)"
+        : "var(--status-urgent)"
+      : "var(--ink-muted)";
+
+  // Risk: only show if vulnerability > 0.3
+  const showRisk =
+    org.vulnerability_score != null && org.vulnerability_score > 0.3;
+  const riskPct =
     org.vulnerability_score != null
       ? `${(org.vulnerability_score * 100).toFixed(0)}%`
       : "--";
-  const vulnColor =
+  const riskColor =
     org.vulnerability_score != null && org.vulnerability_score > 0.7
-      ? "#EF4444"
-      : org.vulnerability_score != null && org.vulnerability_score > 0.3
-      ? "#F5A623"
-      : "#10B981";
+      ? "var(--status-urgent)"
+      : "var(--status-attention)";
 
   return (
-    <tr
-      className={`animate-card-in ${rowTierClass(org.tier)} cursor-pointer`}
-      style={{ animationDelay: `${index * 20}ms` }}
-    >
+    <tr className={`${rowTierClass(org.tier)} cursor-pointer`}>
       <td>
         <Link
           href={`/org/${org.ein}`}
-          className="block hover:text-moobu-blue transition-colors"
+          className="block hover:text-brand"
         >
-          <span className="font-semibold text-sm text-foreground">
+          <span className="text-sm text-ink" style={{ fontWeight: 500 }}>
             {org.org_name || "Unknown Organization"}
           </span>
-          {org.mission_description && (
-            <span
-              className="block text-[11px] text-muted truncate max-w-[300px] mt-0.5"
-              title={org.mission_description}
-            >
-              {org.mission_description.slice(0, 80)}
-              {org.mission_description.length > 80 ? "..." : ""}
-            </span>
-          )}
+          <span className="block text-xs text-ink-muted tabular-nums mt-0.5">
+            {org.ein}
+          </span>
         </Link>
       </td>
       <td>
-        <span className="text-xs text-muted bg-gray-100 px-1.5 py-0.5 rounded">
+        <span className="text-xs text-ink-tertiary">
           {org.state || "--"}
         </span>
       </td>
       <td>
-        <div className="score-mini-bar">
-          <div className="score-mini-bar-track">
-            <div
-              className="score-mini-bar-fill"
-              style={{
-                width: `${scorePct}%`,
-                backgroundColor: color,
-              }}
-            />
-          </div>
-          <span
-            className="text-xs font-semibold tabular-nums"
-            style={{ color }}
-          >
-            {formatScore(org.composite_score)}
-          </span>
-          <TierBadge tier={org.tier || "Stable"} />
-        </div>
+        <ResilienceGauge
+          score={org.composite_score ?? 0}
+          tier={org.tier ?? "Stable"}
+          size="sm"
+        />
       </td>
       <td className="col-right col-mono">
         {formatCurrency(org.latest_total_revenue)}
@@ -673,19 +458,26 @@ function OrgRow({ org, index }: { org: NonprofitSummary; index: number }) {
       <td className="col-right col-mono">
         {formatCurrency(org.latest_net_assets)}
       </td>
-      <td className="col-right col-mono text-xs">
-        {reserveText}
-      </td>
-      <td>
-        <TierBadge tier={org.tier || "Stable"} />
+      <td className="col-right">
+        <span className="inline-flex items-center gap-1.5 text-xs tabular-nums text-ink-secondary">
+          <span
+            className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+            style={{ backgroundColor: reserveDotColor }}
+          />
+          {reserveText}
+        </span>
       </td>
       <td className="col-right">
-        <span
-          className="text-xs font-semibold tabular-nums"
-          style={{ color: vulnColor }}
-        >
-          {vulnPct}
-        </span>
+        {showRisk ? (
+          <span
+            className="text-xs tabular-nums"
+            style={{ fontWeight: 600, color: riskColor }}
+          >
+            {riskPct}
+          </span>
+        ) : (
+          <span className="text-xs text-ink-muted">--</span>
+        )}
       </td>
     </tr>
   );

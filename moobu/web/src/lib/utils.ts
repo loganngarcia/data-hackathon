@@ -39,13 +39,13 @@ export function formatScore(value: number | null | undefined): string {
 export function tierClass(tier: string | null | undefined): string {
   switch (tier) {
     case "Thriving":
-      return "tier-thriving";
+      return "status-healthy";
     case "Stable":
-      return "tier-stable";
+      return "status-stable";
     case "Needs Support":
-      return "tier-needs-support";
+      return "status-attention";
     case "Urgent":
-      return "tier-urgent";
+      return "status-urgent";
     default:
       return "";
   }
@@ -54,15 +54,15 @@ export function tierClass(tier: string | null | undefined): string {
 export function tierColor(tier: string | null | undefined): string {
   switch (tier) {
     case "Thriving":
-      return "#10B981";
+      return "#5B8C6F";
     case "Stable":
       return "#3B69B7";
     case "Needs Support":
-      return "#F5A623";
+      return "#C4872A";
     case "Urgent":
-      return "#EF4444";
+      return "#B33A3A";
     default:
-      return "#6B7280";
+      return "#718096";
   }
 }
 
@@ -90,8 +90,8 @@ export function truncateMission(text: string | null, maxLen = 120): string {
 }
 
 const AVATAR_PALETTE = [
-  "#3B69B7", "#10B981", "#F5A623", "#EF4444",
-  "#8B5CF6", "#0891B2", "#F43F5E", "#65A30D",
+  "#4A5568", "#5B8C6F", "#3B69B7", "#C4872A",
+  "#718096", "#B33A3A", "#1B2B4D", "#A0AEC0",
 ];
 
 export function avatarColor(name: string): string {
@@ -140,27 +140,11 @@ export function formatDelta(
   };
 }
 
-// Metric accent colors for score breakdown bars
-const METRIC_COLORS: Record<string, string> = {
-  revenue_concentration_hhi: "#8B5CF6",
-  operating_reserve_ratio: "#3B69B7",
-  revenue_growth_trend: "#10B981",
-  expense_vs_revenue_growth: "#F43F5E",
-  program_expense_ratio: "#0891B2",
-  revenue_volatility: "#F5A623",
-  net_asset_trend: "#10B981",
-  surplus_deficit_consistency: "#3B69B7",
-};
-
-export function metricColor(metricKey: string): string {
-  return METRIC_COLORS[metricKey] || "#6B7280";
-}
-
-// Returns green/yellow/red hex based on 0-10 score range
+// Metric score color — uses Fairlight status palette
 export function metricScoreColor(value: number): string {
-  if (value >= 7) return "#10B981";
-  if (value >= 4) return "#F5A623";
-  return "#EF4444";
+  if (value >= 7) return "#5B8C6F";
+  if (value >= 4) return "#C4872A";
+  return "#B33A3A";
 }
 
 // Plain-English interpretation of each metric score
@@ -218,7 +202,6 @@ const METRIC_INTERPRETATIONS: Record<string, [number, string][]> = {
 export function interpretMetric(key: string, value: number): string {
   const tiers = METRIC_INTERPRETATIONS[key];
   if (!tiers) return "";
-  // Walk the tiers from highest threshold down
   for (let i = tiers.length - 1; i >= 0; i--) {
     if (value >= tiers[i][0]) {
       return tiers[i][1];

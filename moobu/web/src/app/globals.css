@@ -1,50 +1,62 @@
 @import "tailwindcss";
 
+/* ================================================================
+   FAIRLIGHT ADVISORS — Design Token System
+   ================================================================
+   Grounded in the Fairlight office world: ink on paper,
+   boundaries between sections, status that means something.
+   ================================================================ */
+
 :root {
-  --moobu-blue: #3B69B7;
-  --moobu-orange: #F5A623;
-  --moobu-blue-light: #E8EEF7;
-  --moobu-orange-light: #FEF3E2;
-  --moobu-purple: #8B5CF6;
-  --moobu-purple-light: #F3EEFF;
-  --moobu-teal: #0891B2;
-  --moobu-teal-light: #E6F7FA;
-  --moobu-emerald: #10B981;
-  --moobu-emerald-light: #ECFDF5;
-  --moobu-rose: #F43F5E;
-  --moobu-rose-light: #FFF1F2;
-  --background: #F8F9FB;
-  --foreground: #1a1a2e;
-  --card-bg: #ffffff;
-  --border: #E5E7EB;
-  --muted: #6B7280;
-  --shadow-card: 0 1px 3px rgba(59, 105, 183, 0.06), 0 4px 16px rgba(59, 105, 183, 0.04);
-  --shadow-card-hover: 0 4px 12px rgba(59, 105, 183, 0.1), 0 8px 32px rgba(59, 105, 183, 0.06);
-  --shadow-widget: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+  /* Ink — text hierarchy */
+  --ink: #1B2B4D;
+  --ink-secondary: #4A5568;
+  --ink-tertiary: #718096;
+  --ink-muted: #A0AEC0;
+
+  /* Paper — surface elevation */
+  --paper: #FAFAF7;
+  --paper-raised: #FFFFFF;
+  --paper-inset: #F4F3EF;
+
+  /* Boundary — borders */
+  --boundary: rgba(27, 43, 77, 0.08);
+  --boundary-soft: rgba(27, 43, 77, 0.04);
+  --boundary-emphasis: rgba(27, 43, 77, 0.15);
+
+  /* Status — semantic only */
+  --status-healthy: #5B8C6F;
+  --status-healthy-bg: #EDF5F0;
+  --status-stable: #3B69B7;
+  --status-stable-bg: #EBF0F7;
+  --status-attention: #C4872A;
+  --status-attention-bg: #FDF5EC;
+  --status-urgent: #B33A3A;
+  --status-urgent-bg: #FBEAEA;
+
+  /* Brand */
+  --brand: #3B69B7;
+  --brand-light: #EBF0F7;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-moobu-blue: #3B69B7;
-  --color-moobu-blue-light: #E8EEF7;
-  --color-moobu-orange: #F5A623;
-  --color-moobu-orange-light: #FEF3E2;
-  --color-moobu-purple: #8B5CF6;
-  --color-moobu-purple-light: #F3EEFF;
-  --color-moobu-teal: #0891B2;
-  --color-moobu-teal-light: #E6F7FA;
-  --color-moobu-emerald: #10B981;
-  --color-moobu-emerald-light: #ECFDF5;
-  --color-moobu-rose: #F43F5E;
-  --color-moobu-rose-light: #FFF1F2;
-  --color-card: #ffffff;
-  --color-border: #E5E7EB;
-  --color-muted: #6B7280;
-  --color-thriving: #10B981;
-  --color-stable: #3B69B7;
-  --color-needs-support: #F5A623;
-  --color-urgent: #EF4444;
+  --color-ink: #1B2B4D;
+  --color-ink-secondary: #4A5568;
+  --color-ink-tertiary: #718096;
+  --color-ink-muted: #A0AEC0;
+  --color-paper: #FAFAF7;
+  --color-paper-raised: #FFFFFF;
+  --color-paper-inset: #F4F3EF;
+  --color-brand: #3B69B7;
+  --color-brand-light: #EBF0F7;
+  --color-status-healthy: #5B8C6F;
+  --color-status-healthy-bg: #EDF5F0;
+  --color-status-stable: #3B69B7;
+  --color-status-stable-bg: #EBF0F7;
+  --color-status-attention: #C4872A;
+  --color-status-attention-bg: #FDF5EC;
+  --color-status-urgent: #B33A3A;
+  --color-status-urgent-bg: #FBEAEA;
 }
 
 * {
@@ -54,398 +66,113 @@
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--paper);
+  color: var(--ink);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-/* ========== Glass Card ========== */
-.glass-card {
-  background: var(--card-bg);
-  box-shadow: var(--shadow-card);
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  transition: box-shadow 0.25s ease, transform 0.25s ease;
-}
-
-.glass-card:hover {
-  box-shadow: var(--shadow-card-hover);
-  transform: translateY(-2px);
-}
-
-/* ========== Widget System ========== */
-.widget {
-  background: var(--card-bg);
-  border-radius: 20px;
+/* ================================================================
+   CARDS — Borders-only depth, no shadows
+   ================================================================ */
+.card {
+  background: var(--paper-raised);
+  border: 1px solid var(--boundary);
+  border-radius: 8px;
   padding: 24px;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-widget);
-  transition: box-shadow 0.3s ease, transform 0.3s ease;
-  position: relative;
+}
+
+.card-flush {
+  background: var(--paper-raised);
+  border: 1px solid var(--boundary);
+  border-radius: 8px;
+  padding: 0;
   overflow: hidden;
 }
 
-.widget:hover {
-  box-shadow: var(--shadow-card-hover);
-  transform: translateY(-1px);
+/* ================================================================
+   STATUS BADGES — Pill badges with semantic color
+   ================================================================ */
+.status-healthy {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  background: var(--status-healthy-bg);
+  color: var(--status-healthy);
 }
 
-/* Widget accent variants with tinted backgrounds */
-.widget-blue {
-  background: linear-gradient(135deg, #F0F4FA 0%, #E8EEF7 100%);
-  border-color: rgba(59, 105, 183, 0.12);
+.status-stable {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  background: var(--status-stable-bg);
+  color: var(--status-stable);
 }
 
-.widget-green {
-  background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
-  border-color: rgba(16, 185, 129, 0.12);
+.status-attention {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  background: var(--status-attention-bg);
+  color: var(--status-attention);
 }
 
-.widget-orange {
-  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3E2 100%);
-  border-color: rgba(245, 166, 35, 0.12);
+.status-urgent {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  background: var(--status-urgent-bg);
+  color: var(--status-urgent);
 }
 
-.widget-emerald {
-  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
-  border-color: rgba(16, 185, 129, 0.12);
-}
-
-.widget-purple {
-  background: linear-gradient(135deg, #FAF5FF 0%, #F3EEFF 100%);
-  border-color: rgba(139, 92, 246, 0.12);
-}
-
-.widget-teal {
-  background: linear-gradient(135deg, #F0FDFA 0%, #E6F7FA 100%);
-  border-color: rgba(8, 145, 178, 0.12);
-}
-
-.widget-rose {
-  background: linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 100%);
-  border-color: rgba(244, 63, 94, 0.12);
-}
-
-/* Widget with chart (no hover lift) */
-.widget-chart {
-  background: var(--card-bg);
-  border-radius: 20px;
-  padding: 24px;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-widget);
-}
-
-/* ========== Tier Strip (gradient bar at card top) ========== */
+/* ================================================================
+   TIER STRIP — 3px top border accent on cards
+   ================================================================ */
 .tier-strip {
   height: 3px;
-  border-radius: 16px 16px 0 0;
+  border-radius: 8px 8px 0 0;
   width: 100%;
 }
-.tier-strip-thriving { background: linear-gradient(90deg, #10B981, #34D399); }
-.tier-strip-stable { background: linear-gradient(90deg, #3B69B7, #60A5FA); }
-.tier-strip-needs-support { background: linear-gradient(90deg, #F5A623, #FBBF24); }
-.tier-strip-urgent { background: linear-gradient(90deg, #EF4444, #F87171); }
+.tier-strip-thriving { background: var(--status-healthy); }
+.tier-strip-stable { background: var(--status-stable); }
+.tier-strip-needs-support { background: var(--status-attention); }
+.tier-strip-urgent { background: var(--status-urgent); }
 
-/* ========== Tier Badge (enhanced pill) ========== */
-.tier-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-}
+/* Row tier borders (left accent) */
+.row-tier-thriving { border-left: 3px solid var(--status-healthy); }
+.row-tier-stable { border-left: 3px solid var(--status-stable); }
+.row-tier-needs-support { border-left: 3px solid var(--status-attention); }
+.row-tier-urgent { border-left: 3px solid var(--status-urgent); }
 
-.tier-badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-/* Legacy tier badge classes */
-.tier-thriving { background: #DCFCE7; color: #166534; }
-.tier-stable { background: #E8EEF7; color: #1E3A6E; }
-.tier-needs-support { background: #FEF3E2; color: #92400E; }
-.tier-urgent { background: #FEE2E2; color: #991B1B; }
-
-/* ========== Score Ring ========== */
-.score-ring {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* ========== Animations ========== */
-@keyframes fadeSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes drawArc {
-  from {
-    stroke-dashoffset: var(--arc-length);
-  }
-  to {
-    stroke-dashoffset: var(--arc-target);
-  }
-}
-
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes slideInRight {
-  from {
-    opacity: 0;
-    transform: translateX(-12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes countUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes widgetPulse {
-  0%, 100% { box-shadow: var(--shadow-widget); }
-  50% { box-shadow: 0 2px 8px rgba(59, 105, 183, 0.08), 0 8px 24px rgba(59, 105, 183, 0.06); }
-}
-
-@keyframes barGrow {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-
-.animate-card-in {
-  animation: fadeSlideIn 0.4s ease-out both;
-}
-
-.animate-scale-in {
-  animation: scaleIn 0.3s ease-out both;
-}
-
-.animate-slide-in {
-  animation: slideInRight 0.4s ease-out both;
-}
-
-.animate-count-up {
-  animation: countUp 0.5s ease-out both;
-}
-
-.animate-bar-grow {
-  animation: barGrow 0.8s ease-out both;
-  transform-origin: left center;
-}
-
-/* ========== Avatar Circle ========== */
-.avatar-circle {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: -0.02em;
-  user-select: none;
-}
-
-/* ========== Person Badges ========== */
-.person-badge {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.person-badge-officer {
-  background: #E8EEF7;
-  color: #1E3A6E;
-}
-
-.person-badge-director {
-  background: #DCFCE7;
-  color: #166534;
-}
-
-/* ========== Metric Bar ========== */
-.metric-bar-track {
-  height: 8px;
-  background: #F3F4F6;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.metric-bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.6s ease-out;
-}
-
-/* ========== Tab Button ========== */
-.tab-btn {
-  padding: 8px 20px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--muted);
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color 0.2s, border-color 0.2s;
-}
-
-.tab-btn:hover {
-  color: var(--foreground);
-}
-
-.tab-btn-active {
-  color: var(--moobu-blue);
-  border-bottom-color: var(--moobu-blue);
-}
-
-/* ========== Alert Card (risk warnings) ========== */
-.alert-card {
-  background: var(--moobu-orange-light);
-  border: 1px solid rgba(245, 166, 35, 0.25);
-  border-radius: 12px;
-  padding: 16px;
-}
-
-.alert-card-urgent {
-  background: #FEE2E2;
-  border-color: rgba(220, 38, 38, 0.25);
-}
-
-/* ========== Detail Pill ========== */
-.detail-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  background: #F3F4F6;
-  border-radius: 999px;
-  font-size: 13px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-/* ========== Risk border accent ========== */
-.risk-border-high {
-  border-left: 3px solid #EF4444;
-}
-
-/* ========== Callout Box ========== */
-.callout-box {
-  background: #EFF6FF;
-  border: 1px solid #BFDBFE;
-  border-radius: 12px;
-  padding: 16px 20px;
-}
-
-/* ========== Nav Shadow ========== */
-.nav-shadow {
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(59, 105, 183, 0.03);
-}
-
-/* ========== Nav Link Active ========== */
-.nav-link-active {
-  color: var(--moobu-blue);
-  font-weight: 600;
-  position: relative;
-}
-
-.nav-link-active::after {
-  content: '';
-  position: absolute;
-  bottom: -12px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--moobu-blue);
-  border-radius: 1px;
-}
-
-/* ========== KPI Big Number ========== */
-.kpi-number {
-  font-size: 2rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-}
-
-.kpi-label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-/* ========== Chart Container ========== */
-.chart-container {
-  border-radius: 20px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  padding: 24px;
-  box-shadow: var(--shadow-widget);
-}
-
-/* ========== Vulnerability Gauge ========== */
-.vuln-gauge-track {
-  fill: none;
-  stroke: #F3F4F6;
-}
-
-.vuln-gauge-fill {
-  fill: none;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 1s ease-out;
-}
-
-/* ========== Professional Data Table ========== */
+/* ================================================================
+   DATA TABLE — Professional, dense, scannable
+   ================================================================ */
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .data-table thead {
@@ -461,30 +188,24 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--muted);
-  background: #F9FAFB;
-  border-bottom: 1px solid var(--border);
+  color: var(--ink-tertiary);
+  background: var(--paper-inset);
+  border-bottom: 1px solid var(--boundary);
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  transition: color 0.15s;
 }
 
 .data-table thead th:hover {
-  color: var(--foreground);
+  color: var(--ink);
 }
 
 .data-table tbody tr {
-  border-bottom: 1px solid #F3F4F6;
-  transition: background 0.15s;
-}
-
-.data-table tbody tr:nth-child(even) {
-  background: #FAFBFC;
+  border-bottom: 1px solid var(--boundary-soft);
 }
 
 .data-table tbody tr:hover {
-  background: #EFF3FA;
+  background: var(--paper-inset);
 }
 
 .data-table tbody td {
@@ -497,140 +218,165 @@ body {
 }
 
 .data-table .col-mono {
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
 }
 
-/* ========== Metric Widget (small KPI) ========== */
-.metric-widget {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 16px 20px;
-  box-shadow: var(--shadow-widget);
+/* ================================================================
+   TABULAR NUMBERS — Financial data alignment
+   ================================================================ */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
-.metric-widget-value {
-  font-size: 1.5rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+/* ================================================================
+   NAVIGATION
+   ================================================================ */
+.nav-link-active {
+  color: var(--ink);
+  font-weight: 600;
+  position: relative;
 }
 
-.metric-widget-label {
-  font-size: 11px;
+.nav-link-active::after {
+  content: '';
+  position: absolute;
+  bottom: -12px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--ink);
+  border-radius: 1px;
+}
+
+/* ================================================================
+   TAB BUTTON
+   ================================================================ */
+.tab-btn {
+  padding: 8px 20px;
+  font-size: 14px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  margin-bottom: 4px;
+  color: var(--ink-tertiary);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
 }
 
-/* ========== Delta Arrows (YoY Change Indicators) ========== */
+.tab-btn:hover {
+  color: var(--ink);
+}
+
+.tab-btn-active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+/* ================================================================
+   PERSON BADGES
+   ================================================================ */
+.person-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.person-badge-officer {
+  background: var(--status-stable-bg);
+  color: var(--status-stable);
+}
+
+.person-badge-director {
+  background: var(--status-healthy-bg);
+  color: var(--status-healthy);
+}
+
+/* ================================================================
+   AVATAR CIRCLE
+   ================================================================ */
+.avatar-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.02em;
+  user-select: none;
+  background: var(--ink-secondary);
+}
+
+/* ================================================================
+   DELTA INDICATORS
+   ================================================================ */
 .delta-positive {
-  color: #10B981;
+  color: var(--status-healthy);
   font-size: 12px;
   font-weight: 600;
 }
 
 .delta-negative {
-  color: #EF4444;
+  color: var(--status-urgent);
   font-size: 12px;
   font-weight: 600;
 }
 
-.delta-arrow-up::before {
-  content: '\25B2 ';
-  font-size: 9px;
-}
-
-.delta-arrow-down::before {
-  content: '\25BC ';
-  font-size: 9px;
-}
-
-/* ========== Advisory Note (styled callout for recommendations) ========== */
-.advisory-note {
-  background: linear-gradient(135deg, #EFF6FF 0%, #F0F4FA 100%);
-  border: 1px solid #BFDBFE;
-  border-left: 4px solid #3B69B7;
-  border-radius: 12px;
-  padding: 16px 20px;
-}
-
-.advisory-note-title {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #3B69B7;
-  margin-bottom: 6px;
-}
-
-/* ========== Score Mini Bar (inline in table rows) ========== */
-.score-mini-bar {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 80px;
-}
-
-.score-mini-bar-track {
-  width: 48px;
-  height: 6px;
-  background: #F3F4F6;
-  border-radius: 3px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.score-mini-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.5s ease-out;
-}
-
-/* ========== Row Tier Border (left accent) ========== */
-.row-tier-thriving { border-left: 3px solid #10B981; }
-.row-tier-stable { border-left: 3px solid #3B69B7; }
-.row-tier-needs-support { border-left: 3px solid #F5A623; }
-.row-tier-urgent { border-left: 3px solid #EF4444; }
-
-/* ========== Sortable Column Header ========== */
+/* ================================================================
+   SORT INDICATOR
+   ================================================================ */
 .sort-indicator {
   display: inline-block;
   font-size: 9px;
   margin-left: 3px;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .sort-indicator-active {
   opacity: 1;
-  color: #3B69B7;
+  color: var(--brand);
 }
 
-/* ========== Risk Severity Row Borders ========== */
+/* ================================================================
+   RISK ROW BORDERS
+   ================================================================ */
 .risk-row-critical {
-  border-left: 3px solid #EF4444;
+  border-left: 3px solid var(--status-urgent);
 }
 
 .risk-row-moderate {
-  border-left: 3px solid #F5A623;
+  border-left: 3px solid var(--status-attention);
 }
 
-/* ========== Recharts Overrides ========== */
+/* ================================================================
+   RECHARTS OVERRIDES — Minimal, professional
+   ================================================================ */
 .recharts-tooltip-wrapper {
   outline: none !important;
 }
 
 .recharts-default-tooltip {
-  border-radius: 12px !important;
-  border: 1px solid var(--border) !important;
-  box-shadow: var(--shadow-card) !important;
-  padding: 12px 16px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--boundary) !important;
+  box-shadow: none !important;
+  padding: 10px 14px !important;
+  font-size: 13px !important;
 }
 
 .recharts-legend-item-text {
   font-size: 13px !important;
-  color: var(--muted) !important;
+  color: var(--ink-tertiary) !important;
+}
+
+/* ================================================================
+   TYPOGRAPHY — Headings use 600 weight, not 700
+   ================================================================ */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
 }

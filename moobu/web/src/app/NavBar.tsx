@@ -6,30 +6,44 @@ import { usePathname } from "next/navigation";
 export default function NavBar() {
   const pathname = usePathname();
 
-  const linkClass = (href: string) => {
-    const isActive =
-      href === "/"
-        ? pathname === "/"
-        : pathname.startsWith(href);
-    return `text-sm relative pb-1 transition-colors ${
-      isActive ? "nav-link-active" : "text-muted hover:text-foreground"
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname.startsWith(href);
+
+  const linkClass = (href: string) =>
+    `text-sm pb-3 ${
+      isActive(href)
+        ? "nav-link-active"
+        : "text-ink-tertiary hover:text-ink"
     }`;
-  };
 
   return (
-    <nav className="bg-card px-6 py-3 flex items-center justify-between nav-shadow sticky top-0 z-50">
+    <nav
+      className="bg-paper-raised px-6 flex items-center justify-between sticky top-0 z-50"
+      style={{
+        height: 48,
+        borderBottom: "1px solid var(--boundary)",
+      }}
+    >
       <div className="flex items-center gap-8">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-xl font-bold text-moobu-blue tracking-tight">
+        <Link href="/" className="flex items-baseline gap-1.5">
+          <span className="text-base text-ink" style={{ fontWeight: 600 }}>
             Fairlight
           </span>
-          <span className="text-[10px] font-medium text-muted bg-moobu-blue-light px-1.5 py-0.5 rounded">
-            ADVISORS
+          <span
+            className="text-ink-tertiary"
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.12em",
+            }}
+          >
+            Advisors
           </span>
         </Link>
-        <div className="flex gap-5">
+        <div className="flex gap-5 items-end h-full">
           <Link href="/" className={linkClass("/")}>
-            Portfolio X-Ray
+            Portfolio
           </Link>
           <Link href="/hidden-gems" className={linkClass("/hidden-gems")}>
             Hidden Gems
@@ -39,8 +53,8 @@ export default function NavBar() {
           </Link>
         </div>
       </div>
-      <span className="text-xs text-muted">
-        Nonprofit Financial Resilience Platform
+      <span className="text-xs text-ink-muted">
+        Nonprofit Resilience Platform
       </span>
     </nav>
   );
