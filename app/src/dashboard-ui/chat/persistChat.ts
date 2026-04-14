@@ -18,17 +18,6 @@ function notifyChatsChanged(): void {
     }
 }
 
-function deriveChatTitle(messages: ChatMessage[]): string {
-    const firstUser = messages.find((m) => m.role === "user")
-    if (!firstUser?.text?.trim()) return "New chat"
-    let t = firstUser.text.trim()
-    const attachIdx = t.indexOf("\n\n(Attached file names:")
-    if (attachIdx >= 0) t = t.slice(0, attachIdx).trim()
-    const line = t.split("\n")[0]?.trim() ?? ""
-    if (line.length > 56) return `${line.slice(0, 53)}...`
-    return line || "New chat"
-}
-
 /** Pinned first (newest pin first), then by updatedAt. Matches web.tsx sidebar ordering. */
 export function sortChatSummaries(
     entries: SavedChatSummary[]
@@ -50,11 +39,11 @@ function persistSortedIndex(entries: SavedChatSummary[]): void {
     )
 }
 
-function upsertChatIndex(chatId: string, messages: ChatMessage[]): void {
+function upsertChatIndex(chatId: string, _messages: ChatMessage[]): void {
     const prev = listSavedChatsRaw()
     const existing = prev.find((c) => c.id === chatId)
     const title =
-        existing != null ? existing.title : deriveChatTitle(messages)
+        existing != null ? existing.title : "New chat"
     const updatedAt = Date.now()
     const next = prev.filter((c) => c.id !== chatId)
     next.push({
@@ -125,6 +114,11 @@ function migrateAllSessionChatsToLocalOnce(): void {
 export function listSavedChats(): SavedChatSummary[] {
     migrateAllSessionChatsToLocalOnce()
     return sortChatSummaries(listSavedChatsRaw())
+}
+
+export function getSavedChatById(chatId: string): SavedChatSummary | undefined {
+    migrateAllSessionChatsToLocalOnce()
+    return listSavedChatsRaw().find((c) => c.id === chatId)
 }
 
 export function renameChatSession(chatId: string, newTitle: string): void {

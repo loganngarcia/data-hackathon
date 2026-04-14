@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { formatCompactCurrency, formatUsdFull } from "@/lib/format-display";
+import { formatCompactCurrency, formatSignedPercent, formatUsdFull } from "@/lib/format-display";
 
-type FilingPoint = { year: number; revenue: number };
+type FilingPoint = { year: number; revenue: number; expenses: number; netAssets: number };
 
 type FilingsPayload = {
   ein: string;
@@ -14,38 +14,53 @@ type FilingsPayload = {
   error?: string;
 };
 
-type Projected = FilingPoint & { x: number; y: number };
+type ProjectedPoint = FilingPoint & { x: number; yNetAssets: number };
 
-function layoutSeries(
+function layoutNetAssetsSeries(
   points: FilingPoint[],
   width: number,
   height: number,
   pad: { t: number; r: number; b: number; l: number },
-): { path: string; projected: Projected[]; vbW: number; vbH: number; pad: typeof pad } {
+): {
+  pathNetAssets: string;
+  areaPathNetAssets: string;
+  projected: ProjectedPoint[];
+  vbW: number;
+  vbH: number;
+  pad: typeof pad;
+} {
   const vbW = width;
   const vbH = height;
   const innerW = vbW - pad.l - pad.r;
   const innerH = vbH - pad.t - pad.b;
-  const revs = points.map((p) => p.revenue);
-  const minR = Math.min(...revs);
-  const maxR = Math.max(...revs);
-  const span = maxR - minR || 1;
+  const vals = points.map((p) => p.netAssets);
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const span = maxV - minV || 1;
   const years = points.map((p) => p.year);
   const minY = Math.min(...years);
   const maxY = Math.max(...years);
   const ySpan = maxY - minY || 1;
 
-  const projected: Projected[] = points.map((p) => {
+  const projected: ProjectedPoint[] = points.map((p) => {
     const x = pad.l + ((p.year - minY) / ySpan) * innerW;
-    const y = pad.t + innerH - ((p.revenue - minR) / span) * innerH;
-    return { ...p, x, y };
+    const yNetAssets = pad.t + innerH - ((p.netAssets - minV) / span) * innerH;
+    return { ...p, x, yNetAssets };
   });
 
-  const path = projected
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+  const pathNetAssets = projected
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.yNetAssets.toFixed(1)}`)
     .join(" ");
 
-  return { path, projected, vbW, vbH, pad };
+  const b = vbH - pad.b;
+  const pr = projected;
+  let areaPathNetAssets = `M ${pr[0].x} ${b}`;
+  pr.forEach((p) => {
+    areaPathNetAssets += ` L ${p.x} ${p.yNetAssets}`;
+  });
+  areaPathNetAssets += ` L ${pr[pr.length - 1].x} ${b} Z`;
+
+  return { pathNetAssets, areaPathNetAssets, projected, vbW, vbH, pad };
 }
 
 type TooltipState = {
@@ -53,31 +68,26 @@ type TooltipState = {
   top: number;
   year: number;
   revenue: number;
-  yoyVsPrior: number | null;
+  expenses: number;
+  netAssets: number;
+  marginPct: number | null;
 } | null;
 
 const PLOT_PAD = { t: 16, r: 16, b: 28, l: 16 } as const;
 
-function truncateStatusMessage(message: string, max = 96) {
-  const t = message.replace(/\s+/g, " ").trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max - 1)}…`;
-}
-
 export function RevenueHistoryChart({ ein }: { ein: string }) {
   const gradId = useId().replace(/:/g, "");
   const [data, setData] = useState<FilingsPayload | null>(null);
-  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [plotWidth, setPlotWidth] = useState(640);
   const plotRef = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<TooltipState>(null);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const q = encodeURIComponent(ein);
     setLoading(true);
-    setLoadedAt(null);
     fetch(`/api/nonprofit-filings?ein=${q}`)
       .then(async (res) => {
         const text = await res.text();
@@ -98,12 +108,10 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
       .then((json) => {
         if (!cancelled) {
           setData(json);
-          setLoadedAt(new Date());
         }
       })
       .catch((e: Error) => {
         if (!cancelled) {
-          setLoadedAt(new Date());
           setData({
             ein,
             organizationName: "",
@@ -139,91 +147,73 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
 
   const geometry = useMemo(() => {
     if (!data?.points.length) return null;
-    return layoutSeries(data.points, plotWidth, plotHeight, PLOT_PAD);
+    return layoutNetAssetsSeries(data.points, plotWidth, plotHeight, PLOT_PAD);
   }, [data?.points, plotWidth, plotHeight]);
 
   const showTip = (index: number, el: SVGCircleElement) => {
     const wrap = plotRef.current;
     if (!wrap || !geometry) return;
     const projected = geometry.projected[index];
-    const prev = index > 0 ? geometry.projected[index - 1] : null;
-    const yoyVsPrior = prev
-      ? ((projected.revenue - prev.revenue) / Math.max(Math.abs(prev.revenue), 1e-9)) * 100
-      : null;
+    const marginPct =
+      projected.revenue > 0
+        ? ((projected.revenue - projected.expenses) / projected.revenue) * 100
+        : null;
 
     const rect = el.getBoundingClientRect();
     const wrapRect = wrap.getBoundingClientRect();
     const cx = rect.left + rect.width / 2 - wrapRect.left;
     const cy = rect.top + rect.height / 2 - wrapRect.top;
 
+    setHoveredIndex(index);
     setTip({
       left: cx,
       top: cy,
       year: projected.year,
       revenue: projected.revenue,
-      yoyVsPrior,
+      expenses: projected.expenses,
+      netAssets: projected.netAssets,
+      marginPct,
     });
   };
 
-  const hideTip = () => setTip(null);
-
-  const timeLoaded =
-    loadedAt !== null
-      ? loadedAt.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" })
-      : null;
+  const hideTip = () => {
+    setTip(null);
+    setHoveredIndex(null);
+  };
 
   if (loading) {
     return (
-      <div className="tp-revenue-chart-shell tp-revenue-chart-shell--empty">
-        <div className="tp-revenue-chart-status tp-revenue-chart-status--pending" role="status" aria-live="polite">
-          <span className="tp-revenue-status-indicator tp-revenue-status-indicator--pending" aria-hidden />
-          <span className="tp-revenue-status-text">
-            Requesting IRS filings… If this stays here after an edit, the dev client may be reconnecting — check the
-            terminal for compile errors.
-          </span>
-        </div>
+      <div className="tp-revenue-chart-shell tp-revenue-chart-shell--loading" role="status" aria-live="polite">
         <p className="tp-body tp-revenue-chart-state">Loading IRS filing history…</p>
       </div>
     );
   }
 
   if (data?.error || !data || data.points.length === 0) {
-    const msg = data?.error ?? "No revenue filings returned for this EIN.";
-    return (
-      <div className="tp-revenue-chart-shell tp-revenue-chart-shell--empty" role="alert">
-        <div className="tp-revenue-chart-status tp-revenue-chart-status--bad">
-          <span className="tp-revenue-status-indicator tp-revenue-status-indicator--bad" aria-hidden />
-          <span className="tp-revenue-status-text">
-            <strong className="tp-revenue-status-title">Chart data unavailable</strong>
-            {truncateStatusMessage(msg, 400)}
-            {timeLoaded ? <span className="tp-revenue-status-sub">Last attempt: {timeLoaded}</span> : null}
-          </span>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const pts = data.points;
   const last = pts[pts.length - 1];
-  const prior = pts.length >= 2 ? pts[pts.length - 2] : null;
-  const latestYoyPct =
-    prior !== null ? ((last.revenue - prior.revenue) / Math.max(Math.abs(prior.revenue), 1e-9)) * 100 : null;
-  const trendClass =
-    latestYoyPct === null
-      ? "tp-revenue-chart-trend--neutral"
-      : latestYoyPct > 0
-        ? "tp-revenue-chart-trend--up"
-        : latestYoyPct < 0
-          ? "tp-revenue-chart-trend--down"
-          : "tp-revenue-chart-trend--neutral";
+  const positiveNetAssets = last.netAssets >= 0;
+  const modeClass = positiveNetAssets ? "tp-revenue-chart-mode--surplus" : "tp-revenue-chart-mode--deficit";
 
-  const { vbW, vbH, pad } = geometry!;
+  const netAssetsClass =
+    last.netAssets === 0
+      ? "tp-revenue-chart-profit--neutral"
+      : last.netAssets > 0
+        ? "tp-revenue-chart-profit--positive"
+        : "tp-revenue-chart-profit--negative";
+
+  const { vbW, vbH } = geometry!;
 
   return (
     <div className="tp-revenue-chart-shell">
       <div className="tp-revenue-chart-head">
-        <p className="tp-kicker">Revenue</p>
-        <p className="tp-metric-value tp-revenue-chart-figure">{formatUsdFull(last.revenue)}</p>
+        <p className="tp-kicker">Net assets</p>
+        <p className={`tp-metric-value tp-revenue-chart-figure tp-revenue-chart-profit ${netAssetsClass}`}>
+          {formatUsdFull(last.netAssets)}
+        </p>
       </div>
 
       <div className="tp-revenue-chart-plot" ref={plotRef} onMouseLeave={hideTip}>
@@ -237,15 +227,17 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
             role="tooltip"
           >
             <span className="tp-revenue-tooltip-year">{tip.year}</span>
-            <span className="tp-revenue-tooltip-rev">{formatCompactCurrency(tip.revenue)}</span>
-            {tip.yoyVsPrior !== null ? (
-              <span className="tp-revenue-tooltip-yoy">{`${tip.yoyVsPrior.toFixed(1)}% YoY change`}</span>
-            ) : null}
+            <span className="tp-revenue-tooltip-margin">{formatUsdFull(tip.netAssets)}</span>
+            <span className="tp-revenue-tooltip-detail">Revenue {formatCompactCurrency(tip.revenue)}</span>
+            <span className="tp-revenue-tooltip-detail">Expenses {formatCompactCurrency(tip.expenses)}</span>
+            <span className="tp-revenue-tooltip-detail">
+              {tip.marginPct !== null ? `${formatSignedPercent(tip.marginPct)} margin` : "—"}
+            </span>
           </div>
         ) : null}
 
         <svg
-          className={`tp-revenue-chart-svg ${trendClass}`}
+          className={`tp-revenue-chart-svg ${modeClass}`}
           viewBox={`0 0 ${vbW} ${vbH}`}
           width="100%"
           height={plotHeight}
@@ -254,30 +246,17 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
         >
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--revenue-chart-accent)" stopOpacity="0.14" />
-              <stop offset="100%" stopColor="var(--revenue-chart-accent)" stopOpacity="0" />
+              <stop offset="0%" stopColor="var(--revenue-chart-rev)" stopOpacity={0.14} />
+              <stop offset="100%" stopColor="var(--revenue-chart-rev)" stopOpacity={0} />
             </linearGradient>
           </defs>
           {geometry?.projected.length ? (
             <>
+              <path d={geometry.areaPathNetAssets} fill={`url(#${gradId})`} opacity={0.95} />
               <path
-                d={(() => {
-                  const b = vbH - pad.b;
-                  const pr = geometry.projected;
-                  let area = `M ${pr[0].x} ${b}`;
-                  pr.forEach((p) => {
-                    area += ` L ${p.x} ${p.y}`;
-                  });
-                  area += ` L ${pr[pr.length - 1].x} ${b} Z`;
-                  return area;
-                })()}
-                fill={`url(#${gradId})`}
-                opacity={0.95}
-              />
-              <path
-                d={geometry.path}
+                d={geometry.pathNetAssets}
                 fill="none"
-                stroke="var(--revenue-chart-accent)"
+                className="tp-revenue-chart-line tp-revenue-chart-line--net-assets"
                 strokeWidth={2}
                 strokeLinejoin="round"
                 strokeLinecap="round"
@@ -286,10 +265,10 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
           ) : null}
           {geometry?.projected.map((p, i) => (
             <circle
-              key={p.year}
+              key={`hit-${p.year}`}
               cx={p.x}
-              cy={p.y}
-              r={18}
+              cy={p.yNetAssets}
+              r={22}
               fill="transparent"
               style={{ cursor: "pointer" }}
               onMouseEnter={(e) => showTip(i, e.currentTarget)}
@@ -298,16 +277,16 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
               onBlur={hideTip}
             />
           ))}
-          {geometry?.projected.map((p) => (
-            <circle
-              key={`dot-${p.year}`}
-              cx={p.x}
-              cy={p.y}
-              r={4}
-              fill="var(--revenue-chart-accent)"
-              pointerEvents="none"
-            />
-          ))}
+          {hoveredIndex !== null && geometry?.projected[hoveredIndex] ? (
+            <g pointerEvents="none">
+              <circle
+                cx={geometry.projected[hoveredIndex].x}
+                cy={geometry.projected[hoveredIndex].yNetAssets}
+                r={4}
+                className="tp-revenue-chart-dot tp-revenue-chart-dot--net-assets"
+              />
+            </g>
+          ) : null}
         </svg>
       </div>
     </div>

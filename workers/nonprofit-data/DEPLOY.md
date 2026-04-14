@@ -42,6 +42,22 @@ npm run deploy
 
 The worker deploys to `https://nonprofit-data.<account>.workers.dev`.
 
+### CI (GitHub)
+
+On push to `main` or `master`, if files under `workers/nonprofit-data/` change, **GitHub Actions** runs `wrangler deploy` (see repo `.github/workflows/deploy-cloudflare-worker.yml`).
+
+Add repository secret **`CLOUDFLARE_API_TOKEN`** (Cloudflare dashboard → My Profile → API Tokens; “Edit Cloudflare Workers” template works for many accounts).
+
+### Full stack (Worker + Next.js on Vercel)
+
+From the **`app/`** directory (requires `CLOUDFLARE_API_TOKEN` and `VERCEL_TOKEN` in `app/.env.local`):
+
+```bash
+npm run deploy:production
+```
+
+This deploys **Cloudflare first**, then the Vercel production app (including the `nonprofit-ai-data.vercel.app` alias step).
+
 ## 5 — (Optional) Add custom domain
 
 In `wrangler.toml`, uncomment and fill in:

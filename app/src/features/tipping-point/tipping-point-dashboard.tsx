@@ -1,20 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   startTransition,
+  Suspense,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { filterPortfolioByBucket, type PortfolioBucket } from "@/lib/portfolio-buckets";
 import { buildPeerBenchmarks, staffPerMillion } from "@/lib/peer-benchmarks";
 import {
   formatBenchmarkValue,
   formatReserveCoverage,
+  reserveCoverageIsLow,
   formatSignedPercent,
+  formatUsdFull,
   screenScoreToneClasses,
 } from "@/lib/format-display";
 import type { OrgDetail, ScreenerRow } from "@/lib/types";
@@ -23,20 +27,44 @@ import {
   MetricsComparePeerPicker,
 } from "./metrics-compare-peer-picker";
 import { OrgLogoAvatar } from "./org-logo-avatar";
-import { PortfolioHomeFilter } from "./portfolio-home-filter";
+import { websiteUrlToDomain } from "@/lib/website-url";
+import { OrgPeopleSection } from "./org-people-section";
+import { OrgMissionSummary } from "./org-mission-summary";
+import { OrgDetailMetaChips } from "./org-detail-meta-chips";
+import type { AssetsBandId } from "@/lib/assets-band";
+import type { RevenueBandId } from "@/lib/revenue-band";
+import type { ReserveBandId } from "@/lib/reserve-band";
+import type { BoardBandId } from "@/lib/board-band";
+import type { CountBandId } from "@/lib/portfolio-toolbar-bands";
+import {
+  PortfolioBoardFilter,
+  PortfolioEmployeesFilter,
+  PortfolioStateFilter,
+  PortfolioVolunteerFilter,
+} from "./portfolio-extra-filters";
+import { PortfolioAssetsFilter } from "./portfolio-assets-filter";
+import { PortfolioRevenueFilter } from "./portfolio-revenue-filter";
+import { PortfolioReserveFilter } from "./portfolio-reserve-filter";
 import { RevenueHistoryChart } from "./revenue-history-chart";
 import { buildLiveOrgDetail, EM_DASH } from "./tipping-point-live-detail";
+import { pickSimilarOrganizationRows } from "@/lib/similar-orgs";
+import { OrgDetailShareButton } from "./org-detail-share-button";
 
 const MOSAIC_GAP_PX = 12;
-/** Each metric tile is at least this on desktop when the 2×2 block fits. */
-const METRIC_TILE_MIN_PX = 128;
-/** Minimum outer side of the 2×2 metrics square (two tiles + one gap per axis). */
-const METRICS_BLOCK_MIN_SIDE_PX = METRIC_TILE_MIN_PX * 2 + MOSAIC_GAP_PX;
-/** Reserve at least this width for the org card; metrics block sits in the `auto` column. */
-const MOSAIC_MIN_MAIN_COL_PX = 260;
+/** Desktop: fixed size for each metric cell in the 2×2 block. */
+const METRIC_TILE_PX = 136;
+/** Outer side of the metrics square (two tiles + one gap per axis). */
+const MOSAIC_METRICS_GRID_SIDE_PX = METRIC_TILE_PX * 2 + MOSAIC_GAP_PX;
 const MOBILE_MQ = "(max-width: 767px)";
 const SIMILAR_ORG_MAX = 6;
 const PORTFOLIO_PAGE_SIZE = 20;
+const PORTFOLIO_HOME_SKELETON_ROWS = 10;
+const SHARE_FALLBACK_TITLE = "Tipping Point";
+
+function ein9FromRow(row: ScreenerRow): string | null {
+  const d = row.ein.replace(/\D/g, "").slice(0, 9);
+  return d.length === 9 ? d : null;
+}
 
 function PortfolioRowSkeleton() {
   return (
@@ -46,7 +74,6 @@ function PortfolioRowSkeleton() {
         <div className="hp-sk tp-portfolio-list-skeleton-line tp-portfolio-list-skeleton-line--lg" />
         <div className="hp-sk tp-portfolio-list-skeleton-line tp-portfolio-list-skeleton-line--sm" />
       </div>
-      <div className="hp-sk tp-portfolio-list-skeleton-score" />
     </div>
   );
 }
@@ -65,7 +92,29 @@ function ChevronLeftIcon() {
   );
 }
 
-export function TippingPointDashboard({ embedded = false }: { embedded?: boolean }) {
+function TippingPointDashboardFallback({ embedded = false }: { embedded?: boolean }) {
+  return (
+    <div className="tp-dashboard-shell">
+      {!embedded ? (
+        <header className="tp-dash-top">
+          <div className="tp-dash-brand">
+            <h1>Tipping Point</h1>
+            <p>Aggies Data Hackathon 2026 · nonprofit resilience triage</p>
+          </div>
+        </header>
+      ) : null}
+      <div className="hp-dash" data-layer="tipping-point-dashboard">
+        <p className="tp-body tp-portfolio-home-empty">Loading…</p>
+      </div>
+    </div>
+  );
+}
+
+function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }) {
+  const router = useRouter();
+  const pathname = usePathname() || "/";
+  const searchParams = useSearchParams();
+
   /** `home` = org list; `detail` = full org view (former single-page dashboard). */
   const [view, setView] = useState<"home" | "detail">("home");
   const [portfolioRows, setPortfolioRows] = useState<ScreenerRow[]>([]);
@@ -77,30 +126,81 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
   const [revenueByOrg, setRevenueByOrg] = useState<
     Record<string, { currentYearRevenue: number; priorYearRevenue: number }> | null
   >(null);
-  const [portfolioBucket, setPortfolioBucket] = useState<PortfolioBucket>("all");
-
+  const [assetsBand, setAssetsBand] = useState<AssetsBandId>("all");
+  const [revenueBand, setRevenueBand] = useState<RevenueBandId>("all");
+  const [reserveBand, setReserveBand] = useState<ReserveBandId>("all");
+  const [employeeBand, setEmployeeBand] = useState<CountBandId>("all");
+  const [volunteerBand, setVolunteerBand] = useState<CountBandId>("all");
+  const [boardBand, setBoardBand] = useState<BoardBandId>("all");
+  const [stateFilter, setStateFilter] = useState<string>("all");
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const mosaicRef = useRef<HTMLDivElement>(null);
-  const orgCardRef = useRef<HTMLDivElement>(null);
-  const orgInnerRef = useRef<HTMLDivElement>(null);
-  /** Desktop: 2×2 metrics square side + row min-height (main column uses `1fr`). */
-  const [mosaicLayout, setMosaicLayout] = useState<
-    { metricsSide: number; rowMinHeight: number } | undefined
-  >(undefined);
+  /** Desktop: fixed metrics block side (px); main org card height matches in CSS. */
+  const [mosaicLayout, setMosaicLayout] = useState<{ metricsSide: number } | undefined>(undefined);
   const [metricsComparePeerId, setMetricsComparePeerId] = useState<string>(METRICS_COMPARE_MEDIAN);
   const metricsCompareInitRef = useRef(false);
   const portfolioPageRef = useRef(1);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
+  const portfolioRowsRef = useRef<ScreenerRow[]>([]);
+  portfolioRowsRef.current = portfolioRows;
+
+  const orgParamRaw = searchParams.get("org");
+  const orgParamDecoded = useMemo(() => {
+    if (!orgParamRaw) return null;
+    try {
+      return decodeURIComponent(orgParamRaw);
+    } catch {
+      return orgParamRaw;
+    }
+  }, [orgParamRaw]);
+
+  const buildOrgHref = useCallback(
+    (orgId: string) => {
+      const q = new URLSearchParams(searchParams.toString());
+      q.set("org", orgId);
+      const s = q.toString();
+      return s ? `${pathname}?${s}` : pathname;
+    },
+    [pathname, searchParams],
+  );
+
+  const buildPortfolioHomeHref = useCallback(() => {
+    const q = new URLSearchParams(searchParams.toString());
+    q.delete("org");
+    const s = q.toString();
+    return s ? `${pathname}?${s}` : pathname;
+  }, [pathname, searchParams]);
 
   useEffect(() => {
     portfolioPageRef.current = portfolioPage;
   }, [portfolioPage]);
 
+  const portfolioApiFilterQuery = useMemo(() => {
+    const parts: string[] = [];
+    if (assetsBand !== "all") parts.push(`assetsBand=${encodeURIComponent(assetsBand)}`);
+    if (revenueBand !== "all") parts.push(`revenueBand=${encodeURIComponent(revenueBand)}`);
+    if (reserveBand !== "all") parts.push(`reserveBand=${encodeURIComponent(reserveBand)}`);
+    if (employeeBand !== "all") parts.push(`employeeBand=${encodeURIComponent(employeeBand)}`);
+    if (volunteerBand !== "all") parts.push(`volunteerBand=${encodeURIComponent(volunteerBand)}`);
+    if (boardBand !== "all") parts.push(`boardBand=${encodeURIComponent(boardBand)}`);
+    if (stateFilter !== "all") parts.push(`state=${encodeURIComponent(stateFilter)}`);
+    return parts.length ? `&${parts.join("&")}` : "";
+  }, [assetsBand, revenueBand, reserveBand, employeeBand, volunteerBand, boardBand, stateFilter]);
+
   useEffect(() => {
     let cancelled = false;
     setPortfolioError(null);
-    fetch(`/api/portfolio-data?page=1&pageSize=${PORTFOLIO_PAGE_SIZE}`)
+    setPortfolioReady(false);
+    setPortfolioHasMore(false);
+    setLoadingMore(false);
+    loadMoreInFlightRef.current = false;
+    setPortfolioPage(1);
+    portfolioPageRef.current = 1;
+    setPortfolioRows([]);
+    setRevenueByOrg(null);
+
+    fetch(`/api/portfolio-data?page=1&pageSize=${PORTFOLIO_PAGE_SIZE}${portfolioApiFilterQuery}`)
       .then(async (res) => {
         const body = (await res.json().catch(() => ({}))) as {
           screener?: ScreenerRow[];
@@ -141,7 +241,7 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [portfolioApiFilterQuery]);
 
   useEffect(() => {
     if (!portfolioReady || !portfolioHasMore || loadingMore) return;
@@ -155,7 +255,16 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
         const nextPage = portfolioPageRef.current + 1;
         loadMoreInFlightRef.current = true;
         setLoadingMore(true);
-        fetch(`/api/portfolio-data?page=${nextPage}&pageSize=${PORTFOLIO_PAGE_SIZE}`)
+        const excludeEins = portfolioRowsRef.current
+          .map((r) => ein9FromRow(r))
+          .filter((e): e is string => e !== null);
+        const excludeQ =
+          excludeEins.length > 0
+            ? `&excludeEins=${encodeURIComponent(excludeEins.join(","))}`
+            : "";
+        fetch(
+          `/api/portfolio-data?page=${nextPage}&pageSize=${PORTFOLIO_PAGE_SIZE}${excludeQ}${portfolioApiFilterQuery}`,
+        )
           .then(async (res) => {
             const body = (await res.json().catch(() => ({}))) as {
               screener?: ScreenerRow[];
@@ -186,44 +295,127 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [portfolioReady, portfolioHasMore, loadingMore, portfolioRows.length]);
+  }, [portfolioReady, portfolioHasMore, loadingMore, portfolioRows.length, portfolioApiFilterQuery]);
 
   useEffect(() => {
     if (view === "detail" && portfolioReady && portfolioRows.length === 0) {
+      router.replace(buildPortfolioHomeHref());
       startTransition(() => setView("home"));
     }
-  }, [view, portfolioReady, portfolioRows.length]);
+  }, [view, portfolioReady, portfolioRows.length, router, buildPortfolioHomeHref]);
 
-  const homeListRows = useMemo(
-    () => filterPortfolioByBucket(portfolioRows, portfolioBucket),
-    [portfolioRows, portfolioBucket],
-  );
+  /** Sync `view` / selection from `?org=` (including browser back/forward). */
+  useEffect(() => {
+    if (!portfolioReady) return;
+
+    if (!orgParamDecoded) {
+      startTransition(() => {
+        setView("home");
+        if (portfolioRows.length > 0) {
+          setSelectedOrgId((prev) => {
+            if (prev && portfolioRows.some((r) => r.id === prev)) return prev;
+            return portfolioRows[0]!.id;
+          });
+        }
+      });
+      return;
+    }
+
+    startTransition(() => {
+      setSelectedOrgId(orgParamDecoded);
+      setView("detail");
+    });
+  }, [portfolioReady, orgParamDecoded, portfolioRows]);
+
+  /** Deep link: load more portfolio pages until `org` appears (or none left). */
+  useEffect(() => {
+    if (!portfolioReady || !orgParamDecoded) return;
+    if (portfolioRows.some((r) => r.id === orgParamDecoded)) return;
+    if (!portfolioHasMore || loadingMore) return;
+    if (loadMoreInFlightRef.current) return;
+
+    const nextPage = portfolioPageRef.current + 1;
+    loadMoreInFlightRef.current = true;
+    setLoadingMore(true);
+    const excludeEins = portfolioRowsRef.current
+      .map((r) => ein9FromRow(r))
+      .filter((e): e is string => e !== null);
+    const excludeQ =
+      excludeEins.length > 0 ? `&excludeEins=${encodeURIComponent(excludeEins.join(","))}` : "";
+    fetch(
+      `/api/portfolio-data?page=${nextPage}&pageSize=${PORTFOLIO_PAGE_SIZE}${excludeQ}${portfolioApiFilterQuery}`,
+    )
+      .then(async (res) => {
+        const body = (await res.json().catch(() => ({}))) as {
+          screener?: ScreenerRow[];
+          revenueByOrg?: Record<string, { currentYearRevenue: number; priorYearRevenue: number }>;
+          hasMore?: boolean;
+        };
+        if (!res.ok) return;
+        return body;
+      })
+      .then((data) => {
+        if (!data) return;
+        setPortfolioRows((prev) => {
+          const seen = new Set(prev.map((r) => r.id));
+          const add = (data.screener ?? []).filter((r) => !seen.has(r.id));
+          return [...prev, ...add];
+        });
+        setRevenueByOrg((prev) => ({ ...(prev ?? {}), ...(data.revenueByOrg ?? {}) }));
+        setPortfolioHasMore(Boolean(data.hasMore));
+        setPortfolioPage(nextPage);
+        portfolioPageRef.current = nextPage;
+      })
+      .finally(() => {
+        loadMoreInFlightRef.current = false;
+        setLoadingMore(false);
+      });
+  }, [portfolioReady, orgParamDecoded, portfolioRows, portfolioHasMore, loadingMore, portfolioApiFilterQuery]);
+
+  /** Unknown `org` after loading all pages — clear the param and return home. */
+  useEffect(() => {
+    if (!portfolioReady || !orgParamDecoded) return;
+    if (portfolioRows.some((r) => r.id === orgParamDecoded)) return;
+    if (portfolioHasMore || loadingMore) return;
+
+    router.replace(buildPortfolioHomeHref());
+    startTransition(() => {
+      setView("home");
+      if (portfolioRows.length > 0) {
+        setSelectedOrgId(portfolioRows[0]!.id);
+      }
+    });
+  }, [
+    portfolioReady,
+    orgParamDecoded,
+    portfolioRows,
+    portfolioHasMore,
+    loadingMore,
+    router,
+    buildPortfolioHomeHref,
+  ]);
 
   const selectedRow = useMemo((): ScreenerRow | undefined => {
     if (portfolioRows.length === 0) return undefined;
-    return portfolioRows.find((r) => r.id === selectedOrgId) ?? portfolioRows[0];
-  }, [selectedOrgId, portfolioRows]);
+    if (view === "detail" && selectedOrgId) {
+      return portfolioRows.find((r) => r.id === selectedOrgId);
+    }
+    if (selectedOrgId) {
+      return portfolioRows.find((r) => r.id === selectedOrgId) ?? portfolioRows[0];
+    }
+    return portfolioRows[0];
+  }, [view, selectedOrgId, portfolioRows]);
 
   const detail: OrgDetail | undefined = useMemo(() => {
     if (!selectedRow) return undefined;
     return buildLiveOrgDetail(selectedRow, portfolioRows, revenueByOrg);
   }, [selectedRow, portfolioRows, revenueByOrg]);
 
-  useEffect(() => {
-    if (portfolioRows.length === 0) return;
-    if (!selectedOrgId || !portfolioRows.some((r) => r.id === selectedOrgId)) {
-      startTransition(() => setSelectedOrgId(portfolioRows[0]!.id));
-    }
-  }, [portfolioRows, selectedOrgId]);
-
   const benchmarkRows = useMemo(() => detail?.peerBenchmarks.slice(0, 4) ?? [], [detail]);
 
   const similarOrgRows = useMemo(() => {
     if (!selectedRow) return [];
-    const state = selectedRow.state;
-    return portfolioRows
-      .filter((r) => r.id !== selectedRow.id && r.state === state)
-      .slice(0, SIMILAR_ORG_MAX);
+    return pickSimilarOrganizationRows(portfolioRows, selectedRow, SIMILAR_ORG_MAX);
   }, [portfolioRows, selectedRow]);
 
   useEffect(() => {
@@ -269,27 +461,11 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
     return peerMedianFallback;
   }
 
-  function openOrgDetail(id: string) {
-    startTransition(() => {
-      setSelectedOrgId(id);
-      setView("detail");
-    });
-  }
-
-  function backToPortfolio() {
-    startTransition(() => setView("home"));
-  }
-
   useLayoutEffect(() => {
     if (view !== "detail") {
       setMosaicLayout(undefined);
       return;
     }
-    const mosaic = mosaicRef.current;
-    const card = orgCardRef.current;
-    const inner = orgInnerRef.current;
-    if (!mosaic || !card || !inner) return;
-
     const mq = window.matchMedia(MOBILE_MQ);
 
     const sync = () => {
@@ -297,37 +473,15 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
         setMosaicLayout(undefined);
         return;
       }
-      const padY =
-        parseFloat(getComputedStyle(card).paddingTop) + parseFloat(getComputedStyle(card).paddingBottom);
-      const orgNaturalH = inner.getBoundingClientRect().height + padY;
-      const totalW = mosaic.getBoundingClientRect().width;
-      const maxMetricsSide = Math.max(
-        METRICS_BLOCK_MIN_SIDE_PX,
-        totalW - MOSAIC_GAP_PX - MOSAIC_MIN_MAIN_COL_PX,
-      );
-      const metricsSide = Math.min(
-        maxMetricsSide,
-        Math.max(orgNaturalH, METRICS_BLOCK_MIN_SIDE_PX),
-      );
-      const rowMinHeight = Math.max(orgNaturalH, metricsSide);
-      setMosaicLayout({
-        metricsSide: Math.floor(metricsSide * 100) / 100,
-        rowMinHeight: Math.floor(rowMinHeight * 100) / 100,
-      });
+      setMosaicLayout({ metricsSide: MOSAIC_METRICS_GRID_SIDE_PX });
     };
 
     sync();
-    const roInner = new ResizeObserver(sync);
-    const roMosaic = new ResizeObserver(sync);
-    roInner.observe(inner);
-    roMosaic.observe(mosaic);
     mq.addEventListener("change", sync);
     return () => {
-      roInner.disconnect();
-      roMosaic.disconnect();
       mq.removeEventListener("change", sync);
     };
-  }, [view, selectedOrgId, detail?.summary]);
+  }, [view, selectedOrgId]);
 
   return (
     <div className="tp-dashboard-shell">
@@ -337,49 +491,60 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
             <h1>Tipping Point</h1>
             <p>Aggies Data Hackathon 2026 · nonprofit resilience triage</p>
           </div>
-          <nav className="tp-dash-nav" aria-label="Demo versions">
-            <Link href="/legacy">Open legacy deck UI (backup)</Link>
-          </nav>
         </header>
       ) : null}
 
       <div className="hp-dash" data-layer="tipping-point-dashboard">
         {view === "home" ? (
           <section className="hp-sec" aria-label="Organizations">
-            <div className="tp-portfolio-home-toolbar">
-              <PortfolioHomeFilter rows={portfolioRows} value={portfolioBucket} onChange={setPortfolioBucket} />
+            <div className="tp-portfolio-home-hero">
+              <h2 className="tp-portfolio-home-question">What nonprofit can we help?</h2>
             </div>
-            <div className="tp-portfolio-home-list">
+            <div className="tp-portfolio-home-toolbar">
+              <div className="tp-portfolio-home-toolbar-inner">
+                <PortfolioReserveFilter value={reserveBand} onChange={setReserveBand} />
+                <PortfolioAssetsFilter value={assetsBand} onChange={setAssetsBand} />
+                <PortfolioRevenueFilter value={revenueBand} onChange={setRevenueBand} />
+                <PortfolioBoardFilter value={boardBand} onChange={setBoardBand} />
+                <PortfolioEmployeesFilter value={employeeBand} onChange={setEmployeeBand} />
+                <PortfolioVolunteerFilter value={volunteerBand} onChange={setVolunteerBand} />
+                <PortfolioStateFilter value={stateFilter} onChange={setStateFilter} />
+              </div>
+            </div>
+            <div className="tp-portfolio-home-list" aria-busy={!portfolioReady}>
               {!portfolioReady ? (
-                <p className="tp-body tp-portfolio-home-empty">Loading portfolio…</p>
+                <>
+                  <p className="tp-visually-hidden">Loading portfolio…</p>
+                  {Array.from({ length: PORTFOLIO_HOME_SKELETON_ROWS }, (_, i) => (
+                    <PortfolioRowSkeleton key={`portfolio-skel-${i}`} />
+                  ))}
+                </>
               ) : portfolioRows.length === 0 ? (
                 <p className="tp-body tp-portfolio-home-empty">
                   {portfolioError ?? EM_DASH}
                 </p>
-              ) : homeListRows.length === 0 ? (
-                <p className="tp-body tp-portfolio-home-empty">No organizations match this filter.</p>
               ) : (
                 <>
-                  {homeListRows.map((row) => (
-                    <button
+                  {portfolioRows.map((row) => (
+                    <Link
                       key={row.id}
-                      type="button"
+                      href={buildOrgHref(row.id)}
+                      scroll={false}
                       className="tp-portfolio-list-card"
-                      onClick={() => openOrgDetail(row.id)}
                     >
-                      <OrgLogoAvatar organizationName={row.organizationName} websiteDomain="" />
+                      <OrgLogoAvatar
+                        organizationName={row.organizationName}
+                        websiteDomain={websiteUrlToDomain(row.websiteUrl)}
+                        cachedLogoDomain={row.logoDomain}
+                        logoImageUrl={row.logoImageUrl}
+                      />
                       <div className="tp-people-text tp-portfolio-list-text">
                         <p className="tp-people-name">{row.organizationName}</p>
                         <p className="tp-people-role">
                           {row.city}, {row.state}
                         </p>
                       </div>
-                      <p
-                        className={`tp-metric-value tp-portfolio-list-score ${screenScoreToneClasses(row.screenScore)}`}
-                      >
-                        {row.screenScore}
-                      </p>
-                    </button>
+                    </Link>
                   ))}
                   {loadingMore ? (
                     <>
@@ -395,52 +560,68 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
               )}
             </div>
           </section>
+        ) : view === "detail" && orgParamDecoded && (!selectedRow || !detail) ? (
+          <section className="hp-sec" aria-label="Organization">
+            <div className="tp-org-detail-stack">
+              <div className="tp-org-detail-toolbar">
+                <Link
+                  href={buildPortfolioHomeHref()}
+                  scroll={false}
+                  className="tp-back-button"
+                  aria-label="Back to portfolio"
+                >
+                  <ChevronLeftIcon />
+                  Back
+                </Link>
+                <OrgDetailShareButton shareTitle={SHARE_FALLBACK_TITLE} />
+              </div>
+              <p className="tp-body tp-portfolio-home-empty">
+                {portfolioHasMore || loadingMore
+                  ? "Loading organization…"
+                  : "Organization not found in portfolio."}
+              </p>
+            </div>
+          </section>
         ) : selectedRow && detail ? (
           <>
             <div className="tp-org-detail-stack">
               <div className="tp-org-detail-toolbar">
-                <button type="button" className="tp-back-button" onClick={backToPortfolio} aria-label="Back to portfolio">
+                <Link
+                  href={buildPortfolioHomeHref()}
+                  scroll={false}
+                  className="tp-back-button"
+                  aria-label="Back to portfolio"
+                >
                   <ChevronLeftIcon />
                   Back
-                </button>
+                </Link>
+                <OrgDetailShareButton shareTitle={selectedRow.organizationName} />
               </div>
 
               <section className="hp-sec tp-overview-sec" aria-label="Organization overview">
               <div className="hp-mosaic" ref={mosaicRef}>
-            <div
-              className="tp-card tp-card-big hp-mosaic-tall"
-              ref={orgCardRef}
-              style={
-                mosaicLayout !== undefined ? { minHeight: mosaicLayout.rowMinHeight } : undefined
-              }
-            >
-              <div
-                ref={orgInnerRef}
-                className="tp-mosaic-org-inner"
-                style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", gap: 16 }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-start",
-                    gap: 12,
-                  }}
-                >
-                  <OrgLogoAvatar organizationName={selectedRow.organizationName} websiteDomain={detail.website} />
-                  <div style={{ minWidth: 0, alignSelf: "stretch" }}>
-                    <p className="tp-title" style={{ fontSize: 21 }}>
-                      {selectedRow.organizationName}
-                    </p>
-                    <p className="tp-body" style={{ marginTop: 4 }}>
-                      {selectedRow.city}, {selectedRow.state}
-                    </p>
+            <div className="tp-card tp-card-big hp-mosaic-tall tp-mosaic-org-card">
+              <div className="tp-mosaic-org-inner tp-mosaic-org-inner--detail">
+                <div className="tp-mosaic-org-head">
+                  <div className="tp-mosaic-org-head-main">
+                    <OrgLogoAvatar
+                      organizationName={selectedRow.organizationName}
+                      websiteDomain={websiteUrlToDomain(selectedRow.websiteUrl)}
+                      cachedLogoDomain={selectedRow.logoDomain}
+                      logoImageUrl={selectedRow.logoImageUrl}
+                    />
+                    <div className="tp-mosaic-org-titles">
+                      <p className="tp-title tp-mosaic-org-title">{selectedRow.organizationName}</p>
+                      <p className="tp-body tp-mosaic-org-location">
+                        {selectedRow.city}, {selectedRow.state}
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <p className="tp-body" style={{ color: "var(--text-primary)" }}>
-                  {detail.summary}
-                </p>
-                <p className="tp-body tp-org-ein">EIN {selectedRow.ein}</p>
+                <div className="tp-mosaic-org-mission">
+                  <OrgMissionSummary ein={selectedRow.ein} initialSummary={detail.summary} />
+                </div>
+                <p className="tp-body tp-org-ein tp-mosaic-org-ein">EIN {selectedRow.ein}</p>
               </div>
             </div>
 
@@ -459,19 +640,22 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
                 </p>
               </div>
               <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
-                <p className="tp-kicker">Risk band</p>
-                <p className="tp-metric-value" style={{ fontSize: 18 }}>
-                  {selectedRow.riskBand}
-                </p>
-              </div>
-              <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
-                <p className="tp-kicker">YoY growth</p>
+                <p className="tp-kicker">YoY revenue</p>
                 <p className="tp-metric-value">{formatSignedPercent(selectedRow.growthRate)}</p>
               </div>
               <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
                 <p className="tp-kicker">Reserve coverage</p>
-                <p className="tp-metric-value" style={{ fontSize: 18 }}>
+                <p
+                  className={`tp-metric-value${reserveCoverageIsLow(selectedRow.reserveMonths) ? " tp-screen-score--critical" : ""}`}
+                  style={{ fontSize: 18 }}
+                >
                   {formatReserveCoverage(selectedRow.reserveMonths)}
+                </p>
+              </div>
+              <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
+                <p className="tp-kicker">Revenue</p>
+                <p className="tp-metric-value" style={{ fontSize: 18 }}>
+                  {formatUsdFull(selectedRow.revenue)}
                 </p>
               </div>
             </div>
@@ -479,55 +663,54 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
 
               <div className="tp-revenue-wide">
                 <RevenueHistoryChart ein={selectedRow.ein} />
+                <OrgDetailMetaChips
+                  ein={selectedRow.ein}
+                  initialWebsiteUrl={selectedRow.websiteUrl}
+                  foundedYear={selectedRow.foundedYear}
+                  employeeCount={selectedRow.employeeCount}
+                  volunteerCount={selectedRow.volunteerCount}
+                />
               </div>
             </section>
             </div>
 
-                <section className="hp-sec" aria-label="People">
-              <h2 className="hp-sec-title">People</h2>
-              <p className="tp-people-lede">
-                Leadership and staff contacts are not in the ProPublica 990 extract; connect a CRM or manual
-                directory if you need names here.
-              </p>
-              <div className="hp-map-grid">
-                <article className="tp-people-card">
-                  <div className="tp-people-avatar" aria-hidden />
-                  <div className="tp-people-text">
-                    <p className="tp-people-name">{EM_DASH}</p>
-                    <p className="tp-people-role">{EM_DASH}</p>
-                  </div>
-                </article>
-              </div>
-            </section>
+                <OrgPeopleSection ein={selectedRow.ein} />
 
                 <section className="hp-sec" aria-label="Similar organizations">
               <h2 className="hp-sec-title">Similar organizations</h2>
               <div className="tp-portfolio-home-list">
                 {similarOrgRows.length === 0 ? (
                   <p className="tp-body tp-portfolio-home-empty">
-                    No other organizations in this state in the portfolio.
+                    No other organizations are in your loaded list yet. Go back to the portfolio and load more
+                    rows to see peers ranked by similar reserve coverage, then similar revenue.
                   </p>
                 ) : (
                   similarOrgRows.map((row) => (
-                    <button
+                    <Link
                       key={row.id}
-                      type="button"
+                      href={buildOrgHref(row.id)}
+                      scroll={false}
                       className="tp-portfolio-list-card"
-                      onClick={() => openOrgDetail(row.id)}
                     >
-                      <OrgLogoAvatar organizationName={row.organizationName} websiteDomain="" />
+                      <OrgLogoAvatar
+                        organizationName={row.organizationName}
+                        websiteDomain={websiteUrlToDomain(row.websiteUrl)}
+                        cachedLogoDomain={row.logoDomain}
+                        logoImageUrl={row.logoImageUrl}
+                      />
                       <div className="tp-people-text tp-portfolio-list-text">
                         <p className="tp-people-name">{row.organizationName}</p>
                         <p className="tp-people-role">
                           {row.city}, {row.state}
                         </p>
                       </div>
-                      <p
-                      className={`tp-metric-value tp-portfolio-list-score ${screenScoreToneClasses(row.screenScore)}`}
-                    >
-                      {row.screenScore}
-                    </p>
-                    </button>
+                      <span
+                        className={`tp-metric-value tp-portfolio-list-metric ${screenScoreToneClasses(row.screenScore)}`}
+                        aria-label={`Screener score ${row.screenScore}`}
+                      >
+                        {row.screenScore}
+                      </span>
+                    </Link>
                   ))
                 )}
               </div>
@@ -544,7 +727,13 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
               {benchmarkRows.map((row) => (
                 <div key={`org-${row.label}`} className="tp-panel-compare-row">
                   <p className="tp-kicker">{row.label}</p>
-                  <p className="tp-body tp-panel-compare-value">
+                  <p
+                    className={`tp-body tp-panel-compare-value${
+                      row.label === "Reserve months" && reserveCoverageIsLow(row.orgValue)
+                        ? " tp-reserve-coverage-low"
+                        : ""
+                    }`}
+                  >
                     {formatBenchmarkValue(row.label, row.orgValue)}
                   </p>
                 </div>
@@ -563,17 +752,23 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
                 value={metricsComparePeerId}
                 onChange={setMetricsComparePeerId}
               />
-              {benchmarkRows.map((row) => (
-                <div key={`peer-${row.label}`} className="tp-panel-compare-row">
-                  <p className="tp-kicker">{row.label}</p>
-                  <p className="tp-body tp-panel-compare-value">
-                    {formatBenchmarkValue(
-                      row.label,
-                      panelPeerBenchmarkValue(row.label, row.peerMedian),
-                    )}
-                  </p>
-                </div>
-              ))}
+              {benchmarkRows.map((row) => {
+                const peerMetric = panelPeerBenchmarkValue(row.label, row.peerMedian);
+                return (
+                  <div key={`peer-${row.label}`} className="tp-panel-compare-row">
+                    <p className="tp-kicker">{row.label}</p>
+                    <p
+                      className={`tp-body tp-panel-compare-value${
+                        row.label === "Reserve months" && reserveCoverageIsLow(peerMetric)
+                          ? " tp-reserve-coverage-low"
+                          : ""
+                      }`}
+                    >
+                      {formatBenchmarkValue(row.label, peerMetric)}
+                    </p>
+                  </div>
+                );
+              })}
               </div>
               </div>
             </section>
@@ -630,13 +825,15 @@ export function TippingPointDashboard({ embedded = false }: { embedded?: boolean
             </section>
           </>
         ) : null}
-
-        {embedded ? (
-          <p className="tp-embedded-footer">
-            <Link href="/legacy">Open legacy three-screen deck (backup)</Link>
-          </p>
-        ) : null}
       </div>
     </div>
+  );
+}
+
+export function TippingPointDashboard(props: { embedded?: boolean }) {
+  return (
+    <Suspense fallback={<TippingPointDashboardFallback embedded={props.embedded} />}>
+      <TippingPointDashboardInner {...props} />
+    </Suspense>
   );
 }

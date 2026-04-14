@@ -10,14 +10,17 @@ Use these agent instructions to help you win the hackathon.
 ## App stack (repository)
 
 - The demo app lives in `app/`: **Next.js + TypeScript** (no JavaScript-only source files for app logic; keep `tsconfig` strictness as the project already does).
-- **Deployment target: Vercel.** Prefer `vercel.json` or `vercel.ts` project config and environment variables via Vercel when deploying this frontend.
-- **Agents must deploy after every change to `app/`** (any size). From `app/`: **`npm run deploy:vercel`** (uses `app/.env.local` → `VERCEL_TOKEN`, production deploy, then aliases **`https://nonprofit-ai-data.vercel.app`** to the new deployment). Do not skip deploy after merging dashboard/API/UI work.
+- **Deployment targets:** Production is split between **Vercel** (Next app) and **Cloudflare** (nonprofit-data Worker + D1). **Always redeploy the side you changed** before considering the task done—do not leave production on stale code.
+- **Cloudflare first (Worker):** The Next app calls the Worker at runtime. **Always deploy the Worker to Cloudflare** when `workers/nonprofit-data/` changes (`src/`, `wrangler.toml`, or anything that affects the deployed Worker). From `workers/nonprofit-data/`: **`npm run deploy`** or **`npx wrangler deploy`**. On **GitHub**, pushes to `main`/`master` that touch `workers/nonprofit-data/**` run **`.github/workflows/deploy-cloudflare-worker.yml`** automatically (requires repo secret **`CLOUDFLARE_API_TOKEN`**).
+- **Vercel (`app/`):** After **any** change under `app/` (routes, UI, API routes, `lib/`, config). From `app/`: **`npm run deploy:vercel`** (uses `app/.env.local` → `VERCEL_TOKEN`, production deploy, then aliases **`https://nonprofit-ai-data.vercel.app`** to the new deployment). Prefer `vercel.json` / `vercel.ts` and env vars on Vercel for configuration.
+- **GitHub → Vercel (automatic):** Pushes to **`main`/`master`** that touch **`app/**`** run **`.github/workflows/deploy-vercel-app.yml`** (production deploy + vanity alias). Requires repo secrets **`VERCEL_TOKEN`**, **`VERCEL_ORG_ID`**, and **`VERCEL_PROJECT_ID`** (from the Vercel project **Settings → General**). If secrets are missing, deploy from your machine with `npm run deploy:vercel` as above.
+- **Both in one command:** From `app/`, **`npm run deploy:production`** deploys **Cloudflare Worker then Vercel** (requires `CLOUDFLARE_API_TOKEN` and `VERCEL_TOKEN` in `app/.env.local`). Use this when shipping features that touch **both** the Worker and the Next app so production never skips Cloudflare.
 
 ### Tipping Point dashboard UI (merge-friendly)
 
 - **Location:** `app/src/features/tipping-point/` (components + `tipping-point-dashboard.css` co-located). **Import:** `import { TippingPointDashboard } from "@/features/tipping-point"`.
 - **Why:** Keeps the hackathon mosaic out of generic `components/` so pulls that add pipelines, APIs, or other apps rarely touch the same paths. Prefer editing this folder (and shared `lib/` types/data) for dashboard work.
-- **Pulling / rebasing:** Fetch and merge or rebase `main` often; if Git reports conflicts, they are usually in `lib/mock-data.ts`, `dashboard-ui/`, or routes — resolve shared data first, then re-run `npm run build` in `app/`.
+- **Pulling / rebasing:** Fetch and merge or rebase `main` often; if Git reports conflicts, they are usually in `app/src/app/api/portfolio-data/`, `dashboard-ui/`, or routes — resolve shared data first, then re-run `npm run build` in `app/`.
 
 ### Local dev (agents — do not ask the user to run the server)
 
@@ -25,7 +28,7 @@ When changing or verifying the **Next app** (`app/`), **start the dev server you
 
 **Cursor browser — always navigate (mandatory):** The embedded browser **does not auto-reload** on file saves. **Every time** you start/restart dev **or** finish a batch of UI/route/style/API work under `app/`, you **must** call MCP **`cursor-ide-browser`** → **`browser_navigate`** to **`http://localhost:3000/`** so the user sees the current app in Cursor. If the first navigation stays on `about:blank`, call **`browser_navigate` again** with the **`viewId`** from the tool metadata. Optionally also `open http://localhost:3000` on macOS for the system browser — that does not replace the Cursor step.
 
-After edits, **re-check the terminal** for “Compiled” / errors. The revenue chart shows **loading** and **unavailable** (red) status strips when data is not ready or the fetch failed. Do not instruct the user to run `npm run dev` unless they explicitly prefer to. If port 3000 is busy, stop the old process first; use `npm run dev:clean` if the cache is corrupted.
+After edits, **re-check the terminal** for “Compiled” / errors. The revenue chart shows **loading** while fetching; if filings are missing or the request fails, the **chart block is omitted** (no error strip). Do not instruct the user to run `npm run dev` unless they explicitly prefer to. If port 3000 is busy, stop the old process first; use `npm run dev:clean` if the cache is corrupted.
 
 ## Vercel MCP (required for agent work on deploys and platform tasks)
 

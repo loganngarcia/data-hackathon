@@ -8,6 +8,7 @@ export interface ScreenerRowContract {
   state: string;
   missionArea: string;
   revenue: number;
+  netAssetsEoy: number;
   growthRate: number;
   reserveMonths: number;
   staffCount: number;
@@ -68,6 +69,7 @@ export const hackathonContracts = {
       "state",
       "missionArea",
       "revenue",
+      "netAssetsEoy",
       "growthRate",
       "reserveMonths",
       "staffCount",

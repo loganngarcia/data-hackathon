@@ -17,9 +17,13 @@
     "db:migrate:irs990-xml:remote": "wrangler d1 execute nonprofit-990 --file=schema-irs990-xml.sql --remote",
     "db:migrate:irs990-xml-v2:alter": "wrangler d1 execute nonprofit-990 --file=schema-irs990-xml-alter-v2.sql",
     "db:migrate:irs990-xml-v2:alter:remote": "wrangler d1 execute nonprofit-990 --file=schema-irs990-xml-alter-v2.sql --remote",
+    "db:migrate:org-logo-cache": "wrangler d1 execute nonprofit-990 --file=schema-org-logo-cache.sql",
+    "db:migrate:org-logo-cache:remote": "wrangler d1 execute nonprofit-990 --file=schema-org-logo-cache.sql --remote",
     "irs:index": "node scripts/fetch-irs-index.mjs",
     "irs:parse-xml": "node scripts/parse-irs990-xml.mjs",
-    "sync": "curl -X POST https://nonprofit-data.logangarcia.workers.dev/api/sync -H \"X-Admin-Key: $ADMIN_KEY\""
+    "sync": "curl -X POST https://nonprofit-data.logangarcia.workers.dev/api/sync -H \"X-Admin-Key: $ADMIN_KEY\"",
+    "logo:warm": "bash scripts/warm-logo-cache.sh",
+    "d1:normalize:all": "bash scripts/d1-normalize-all.sh"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",

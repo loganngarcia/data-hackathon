@@ -1,23 +1,37 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { PortfolioBucket } from "@/lib/portfolio-buckets";
-import { portfolioBucketCounts } from "@/lib/portfolio-buckets";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { PortfolioBucket, PortfolioBucketCounts } from "@/lib/portfolio-buckets";
 import type { ScreenerRow } from "@/lib/types";
 
-function ChevronDown({ open }: { open: boolean }) {
+type Props = {
+  rows: ScreenerRow[];
+  value: PortfolioBucket;
+  onChange: (bucket: PortfolioBucket) => void;
+  /** Reserved for API compatibility; counts are not shown in the UI. */
+  aggregateCounts?: PortfolioBucketCounts | null;
+};
+
+const BUCKETS: PortfolioBucket[] = ["all", "at_risk", "thriving"];
+
+function optionLabel(id: PortfolioBucket): string {
+  if (id === "all") return "All";
+  if (id === "at_risk") return "At risk";
+  return "Thriving";
+}
+
+/** Same chevron as `MetricsComparePeerPicker` / `web.tsx` menus (static; open state is via `aria-expanded`). */
+function ChevronDown() {
   return (
     <span
-      className="tp-org-chip-chevron"
       aria-hidden
+      className="tp-panel-compare-peer-chevron"
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
-        transform: open ? "rotate(180deg)" : "none",
-        transition: "transform 0.15s ease",
       }}
     >
       <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -34,22 +48,22 @@ function ChevronDown({ open }: { open: boolean }) {
   );
 }
 
-function CheckEnd() {
+/** Trailing check from `web.tsx` ConversationActions (`trailingCheck`). */
+function WebTrailingCheck() {
   return (
     <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
       style={{ flexShrink: 0 }}
     >
       <path
-        d="M3.5 8.5L6.5 11.5L12.5 4.5"
-        stroke="var(--text-primary)"
-        strokeOpacity="0.85"
-        strokeWidth="1.4"
+        d="M1 6L4.5 9.5L11 2"
+        stroke="var(--semantic-accent)"
+        strokeWidth="1.2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -57,22 +71,18 @@ function CheckEnd() {
   );
 }
 
-const OPTIONS: { id: PortfolioBucket; label: (counts: ReturnType<typeof portfolioBucketCounts>) => string }[] =
-  [
-    { id: "all", label: (c) => `All (${c.total})` },
-    { id: "at_risk", label: (c) => `At risk (${c.atRisk})` },
-    { id: "thriving", label: (c) => `Thriving (${c.thriving})` },
-  ];
+/**
+ * Portfolio segment filter — same floating menu pattern as `web.tsx` ConversationActions
+ * (surface menu, row hover, accent + trailing check for the active option).
+ */
+export function PortfolioHomeFilter(props: Props) {
+  const { value, onChange } = props;
 
-type Props = {
-  rows: ScreenerRow[];
-  value: PortfolioBucket;
-  onChange: (bucket: PortfolioBucket) => void;
-};
+  const options = useMemo(() => BUCKETS.map((id) => ({ id, label: optionLabel(id) })), []);
 
-export function PortfolioHomeFilter({ rows, value, onChange }: Props) {
-  const counts = portfolioBucketCounts(rows);
-  const selectedLabel = OPTIONS.find((o) => o.id === value)?.label(counts) ?? OPTIONS[0].label(counts);
+  const selectedLabel = options.find((o) => o.id === value)?.label ?? options[0]?.label ?? "";
+  /** When showing the whole portfolio (`all`), the chip reads "Risk level" so it matches the toolbar category; dropdown still lists "All". */
+  const triggerLabel = value === "all" ? "Risk level" : selectedLabel;
 
   const [open, setOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -119,15 +129,15 @@ export function PortfolioHomeFilter({ rows, value, onChange }: Props) {
   }, [open]);
 
   const pick = useCallback(
-    (bucket: PortfolioBucket) => {
-      onChange(bucket);
+    (id: PortfolioBucket) => {
+      onChange(id);
       setOpen(false);
     },
     [onChange],
   );
 
   const menu =
-    open && (isMobile || fixedPos) ? (
+    open && (isMobile || fixedPos) && options.length > 0 ? (
       <>
         <div
           role="presentation"
@@ -141,7 +151,7 @@ export function PortfolioHomeFilter({ rows, value, onChange }: Props) {
           onClick={() => setOpen(false)}
         />
         <div
-          data-layer="portfolio home filter menu"
+          data-layer="portfolio bucket menu"
           onClick={(e) => e.stopPropagation()}
           style={{
             position: "fixed",
@@ -181,9 +191,8 @@ export function PortfolioHomeFilter({ rows, value, onChange }: Props) {
                 : {}),
           }}
         >
-          {OPTIONS.map((opt) => {
+          {options.map((opt) => {
             const isSel = opt.id === value;
-            const rowLabel = opt.label(counts);
             return (
               <div
                 key={opt.id}
@@ -225,13 +234,13 @@ export function PortfolioHomeFilter({ rows, value, onChange }: Props) {
                     fontFamily: "var(--font-ui)",
                     fontWeight: 400,
                     lineHeight: "19.32px",
-                    color: "var(--text-primary)",
+                    color: isSel ? "var(--semantic-accent)" : "var(--text-primary)",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {rowLabel}
+                  {opt.label}
                 </span>
                 <div
                   style={{
@@ -242,7 +251,7 @@ export function PortfolioHomeFilter({ rows, value, onChange }: Props) {
                     flexShrink: 0,
                   }}
                 >
-                  {isSel ? <CheckEnd /> : null}
+                  {isSel ? <WebTrailingCheck /> : null}
                 </div>
               </div>
             );
@@ -252,27 +261,29 @@ export function PortfolioHomeFilter({ rows, value, onChange }: Props) {
     ) : null;
 
   return (
-    <div className="tp-org-chip-wrap tp-portfolio-home-filter">
-      <button
-        ref={chipRef}
-        type="button"
-        className="tp-org-chip-trigger"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={`Portfolio filter: ${selectedLabel}. Open menu.`}
-        onClick={() => {
-          if (open) {
-            setOpen(false);
-            return;
-          }
-          if (!chipRef.current) return;
-          measureChip();
-          setOpen(true);
-        }}
-      >
-        <span className="tp-org-chip-label">{selectedLabel}</span>
-        <ChevronDown open={open} />
-      </button>
+    <div className="tp-portfolio-bucket-select-wrap">
+      <div className="tp-portfolio-bucket-picker tp-panel-compare-peer-picker">
+        <button
+          ref={chipRef}
+          type="button"
+          className="tp-panel-compare-peer-trigger"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-label={`Portfolio filter: ${triggerLabel}. Open menu.`}
+          onClick={() => {
+            if (open) {
+              setOpen(false);
+              return;
+            }
+            if (!chipRef.current || options.length === 0) return;
+            measureChip();
+            setOpen(true);
+          }}
+        >
+          <span className="tp-panel-compare-peer-trigger-label">{triggerLabel}</span>
+          <ChevronDown />
+        </button>
+      </div>
       {typeof document !== "undefined" && menu ? createPortal(menu, document.body) : null}
     </div>
   );

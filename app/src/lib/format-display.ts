@@ -18,8 +18,12 @@ export function formatUsdFull(value: number) {
   }).format(value);
 }
 
+/** YoY-style percent: `+` when up, leading `-` when down (e.g. `-12.3%`). */
 export function formatSignedPercent(value: number) {
-  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+  const n = Math.round(value * 10) / 10;
+  if (n > 0) return `+${n.toFixed(1)}%`;
+  if (n < 0) return `${n.toFixed(1)}%`;
+  return "0.0%";
 }
 
 /** Apple HIG system colors (light) for 0–100 screener scores. */
@@ -39,17 +43,34 @@ export function screenScoreToneClasses(score: number): string {
 }
 
 /**
- * Reserve runway: >= 12 months shown as months (no trailing “.0”); under 1 year as days.
+ * Reserve runway: >= 12 months → **years**; >= 6 and < 12 → **months**; under 6 → **days**.
  * `months` is fractional (e.g. from 990-derived runway).
  */
 export function formatReserveCoverage(months: number): string {
   if (months >= 12) {
-    const m = months.toFixed(1).replace(/\.0$/, "");
-    return `${m} mo`;
+    const years = months / 12;
+    const rounded = Math.round(years * 10) / 10;
+    const numStr = Number.isInteger(rounded)
+      ? String(rounded)
+      : rounded.toFixed(1).replace(/\.0$/, "");
+    const singular = rounded === 1;
+    return `${numStr} ${singular ? "year" : "years"}`;
+  }
+  if (months >= 6) {
+    const m = Math.round(months * 10) / 10;
+    const numStr = Number.isInteger(m)
+      ? String(m)
+      : m.toFixed(1).replace(/\.0$/, "");
+    return `${numStr} months`;
   }
   const days = Math.max(0, Math.round(months * (365 / 12)));
   if (days <= 0) return "0 days";
   return days === 1 ? "1 day" : `${days} days`;
+}
+
+/** True when runway is under 6 months (`formatReserveCoverage` uses the days branch). */
+export function reserveCoverageIsLow(months: number): boolean {
+  return months < 6;
 }
 
 export function formatBenchmarkValue(label: string, value: number) {

@@ -109,6 +109,6 @@ The repository is being structured so the pipeline can consume a reproducible lo
 
 ### Notes
 
-- The current app is powered by mocked data in `app/src/lib/mock-data.ts`.
+- Portfolio data comes from **`/api/portfolio-data`** (Worker TEOS / D1), not local fixtures.
 - The typed backend handoff contract lives in `contracts/hackathon-contracts.ts`.
 - If port `3000` is already in use, Next.js will usually offer the next available port in the terminal output.

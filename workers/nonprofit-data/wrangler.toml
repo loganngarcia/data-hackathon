@@ -11,6 +11,8 @@ database_id   = "182e0e14-faac-42db-97de-f6e2ac5960ee"
 
 # ─── Secrets (set with: wrangler secret put ADMIN_KEY) ───────────────────────
 # ADMIN_KEY — protects the POST /api/sync route
+# LOGO_DEV_SECRET_KEY — optional sk_… for POST /api/logo-cache-warm (Brand Search → D1 org_logo_cache)
+# LOGO_DEV_PUBLISHABLE_KEY — optional pk_… so GET /api/irs990-browse adds logo_image_url (img.logo.dev) without exposing the key to Vercel
 
 # ─── Routes (set your zone after deploying) ──────────────────────────────────
 # [[routes]]

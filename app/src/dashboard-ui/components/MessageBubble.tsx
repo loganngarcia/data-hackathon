@@ -29,6 +29,8 @@ type Props = {
     id: string
     copiedMessageId: string | null
     onCopy: (messageId: string) => void
+    /** Hide share/copy/dislike until the streamed reply has finished. */
+    isStreamingAssistant?: boolean
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -37,6 +39,7 @@ export const MessageBubble = memo(function MessageBubble({
     id,
     copiedMessageId,
     onCopy,
+    isStreamingAssistant = false,
 }: Props) {
     const baseTextStyle: CSSProperties = {
         fontSize: 16,
@@ -257,6 +260,7 @@ export const MessageBubble = memo(function MessageBubble({
                     </div>
                 ) : null}
 
+                {!isStreamingAssistant ? (
                 <div
                     className="AiMessageActions"
                     style={{
@@ -394,6 +398,7 @@ export const MessageBubble = memo(function MessageBubble({
                         )}
                     </button>
                 </div>
+                ) : null}
             </div>
         </div>
     )

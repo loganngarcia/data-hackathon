@@ -12,6 +12,30 @@ import { LEFT_SIDEBAR_W, LeftSidebar } from "./components/LeftSidebar";
 import { YouSettingsOverlay } from "./components/YouSettingsOverlay";
 import { DashboardShellContext } from "./shell-context";
 
+const LEFT_SIDEBAR_OPEN_KEY = "dashboard-left-sidebar-open";
+
+function readSidebarPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const v = localStorage.getItem(LEFT_SIDEBAR_OPEN_KEY);
+    if (v === "true") return true;
+    if (v === "false") return false;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+function persistSidebarPreference(open: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    if (window.matchMedia("(max-width: 767px)").matches) return;
+    localStorage.setItem(LEFT_SIDEBAR_OPEN_KEY, open ? "true" : "false");
+  } catch {
+    /* ignore */
+  }
+}
+
 function ShellChrome({ children }: { children: ReactNode }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -32,7 +56,7 @@ function ShellChrome({ children }: { children: ReactNode }) {
     router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [openBtnHover, setOpenBtnHover] = useState(false);
 
@@ -41,15 +65,26 @@ function ShellChrome({ children }: { children: ReactNode }) {
     const update = () => {
       const m = mq.matches;
       setIsMobile(m);
-      if (m) setIsSidebarOpen(false);
+      if (m) {
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(readSidebarPreference());
+      }
     };
     update();
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
   }, []);
 
-  const openSidebar = useCallback(() => setIsSidebarOpen(true), []);
-  const closeSidebar = useCallback(() => setIsSidebarOpen(false), []);
+  const openSidebar = useCallback(() => {
+    setIsSidebarOpen(true);
+    persistSidebarPreference(true);
+  }, []);
+
+  const closeSidebar = useCallback(() => {
+    setIsSidebarOpen(false);
+    persistSidebarPreference(false);
+  }, []);
 
   const padLeft = !isMobile && isSidebarOpen ? LEFT_SIDEBAR_W : 0;
 

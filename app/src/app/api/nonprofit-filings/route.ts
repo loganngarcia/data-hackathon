@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
+import { toOrganizationTitleCase } from "@/lib/org-name-format";
 
 const PROPUBLICA_ORG = "https://projects.propublica.org/nonprofits/api/v2/organizations";
 
 type ProPublicaFiling = {
   tax_prd_yr: number;
   totrevenue: number | null;
+  /** Total expenses (Form 990); ProPublica may expose `totexpns` and/or `totfuncexpns`. */
+  totexpns?: number | null;
+  totfuncexpns?: number | null;
 };
+
+function num(v: unknown): number {
+  if (v === null || v === undefined) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
 type ProPublicaOrgPayload = {
   organization?: { name?: string; ein?: number };
@@ -60,14 +70,27 @@ export async function GET(request: Request) {
 
     const org = payload.organization;
     const filings = payload.filings_with_data ?? [];
-    const points: { year: number; revenue: number }[] = filings
+    const points: { year: number; revenue: number; expenses: number; netAssets: number }[] = filings
       .filter((f) => typeof f.tax_prd_yr === "number" && f.totrevenue != null && !Number.isNaN(f.totrevenue))
-      .map((f) => ({ year: f.tax_prd_yr, revenue: f.totrevenue as number }))
+      .map((f) => {
+        const raw = f as ProPublicaFiling & {
+          totnetassetsend?: number | null;
+          totnetassetend?: number | null;
+          totassetsend?: number | null;
+          totliabend?: number | null;
+        };
+        const expenses = num(raw.totexpns ?? raw.totfuncexpns);
+        const netA = num(raw.totnetassetsend ?? raw.totnetassetend);
+        const assets = num(raw.totassetsend);
+        const liab = num(raw.totliabend);
+        const netAssets = netA || (assets - liab);
+        return { year: f.tax_prd_yr, revenue: f.totrevenue as number, expenses, netAssets };
+      })
       .sort((a, b) => a.year - b.year);
 
     return NextResponse.json({
       ein,
-      organizationName: org?.name ?? "Unknown organization",
+      organizationName: toOrganizationTitleCase(org?.name ?? "Unknown organization"),
       sourceName: "ProPublica Nonprofit Explorer (IRS Form 990 extracts)",
       sourceUrl: "https://projects.propublica.org/nonprofits/",
       points,
