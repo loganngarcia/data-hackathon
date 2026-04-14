@@ -44,15 +44,30 @@ export function tierClass(tier: string | null | undefined): string {
 export function tierColor(tier: string | null | undefined): string {
   switch (tier) {
     case "Thriving":
-      return "#16A34A";
+      return "#10B981";
     case "Stable":
       return "#3B69B7";
     case "Needs Support":
       return "#F5A623";
     case "Urgent":
-      return "#DC2626";
+      return "#EF4444";
     default:
       return "#6B7280";
+  }
+}
+
+export function tierStripClass(tier: string | null | undefined): string {
+  switch (tier) {
+    case "Thriving":
+      return "tier-strip-thriving";
+    case "Stable":
+      return "tier-strip-stable";
+    case "Needs Support":
+      return "tier-strip-needs-support";
+    case "Urgent":
+      return "tier-strip-urgent";
+    default:
+      return "tier-strip-stable";
   }
 }
 
@@ -65,8 +80,8 @@ export function truncateMission(text: string | null, maxLen = 120): string {
 }
 
 const AVATAR_PALETTE = [
-  "#3B69B7", "#16A34A", "#F5A623", "#DC2626",
-  "#8B5CF6", "#0891B2", "#DB2777", "#65A30D",
+  "#3B69B7", "#10B981", "#F5A623", "#EF4444",
+  "#8B5CF6", "#0891B2", "#F43F5E", "#65A30D",
 ];
 
 export function avatarColor(name: string): string {
@@ -82,4 +97,20 @@ export function getInitials(name: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+
+// Metric accent colors for score breakdown bars
+const METRIC_COLORS: Record<string, string> = {
+  revenue_concentration_hhi: "#8B5CF6",
+  operating_reserve_ratio: "#3B69B7",
+  revenue_growth_trend: "#10B981",
+  expense_vs_revenue_growth: "#F43F5E",
+  program_expense_ratio: "#0891B2",
+  revenue_volatility: "#F5A623",
+  net_asset_trend: "#10B981",
+  surplus_deficit_consistency: "#3B69B7",
+};
+
+export function metricColor(metricKey: string): string {
+  return METRIC_COLORS[metricKey] || "#6B7280";
 }

@@ -5,6 +5,14 @@
   --moobu-orange: #F5A623;
   --moobu-blue-light: #E8EEF7;
   --moobu-orange-light: #FEF3E2;
+  --moobu-purple: #8B5CF6;
+  --moobu-purple-light: #F3EEFF;
+  --moobu-teal: #0891B2;
+  --moobu-teal-light: #E6F7FA;
+  --moobu-emerald: #10B981;
+  --moobu-emerald-light: #ECFDF5;
+  --moobu-rose: #F43F5E;
+  --moobu-rose-light: #FFF1F2;
   --background: #F8F9FB;
   --foreground: #1a1a2e;
   --card-bg: #ffffff;
@@ -12,6 +20,7 @@
   --muted: #6B7280;
   --shadow-card: 0 1px 3px rgba(59, 105, 183, 0.06), 0 4px 16px rgba(59, 105, 183, 0.04);
   --shadow-card-hover: 0 4px 12px rgba(59, 105, 183, 0.1), 0 8px 32px rgba(59, 105, 183, 0.06);
+  --shadow-widget: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
 @theme inline {
@@ -21,13 +30,21 @@
   --color-moobu-blue-light: #E8EEF7;
   --color-moobu-orange: #F5A623;
   --color-moobu-orange-light: #FEF3E2;
+  --color-moobu-purple: #8B5CF6;
+  --color-moobu-purple-light: #F3EEFF;
+  --color-moobu-teal: #0891B2;
+  --color-moobu-teal-light: #E6F7FA;
+  --color-moobu-emerald: #10B981;
+  --color-moobu-emerald-light: #ECFDF5;
+  --color-moobu-rose: #F43F5E;
+  --color-moobu-rose-light: #FFF1F2;
   --color-card: #ffffff;
   --color-border: #E5E7EB;
   --color-muted: #6B7280;
-  --color-thriving: #16A34A;
+  --color-thriving: #10B981;
   --color-stable: #3B69B7;
   --color-needs-support: #F5A623;
-  --color-urgent: #DC2626;
+  --color-urgent: #EF4444;
 }
 
 * {
@@ -57,16 +74,78 @@ body {
   transform: translateY(-2px);
 }
 
-/* ========== Tier Strip (3px gradient bar at card top) ========== */
+/* ========== Widget System ========== */
+.widget {
+  background: var(--card-bg);
+  border-radius: 20px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-widget);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.widget:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+/* Widget accent variants with tinted backgrounds */
+.widget-blue {
+  background: linear-gradient(135deg, #F0F4FA 0%, #E8EEF7 100%);
+  border-color: rgba(59, 105, 183, 0.12);
+}
+
+.widget-green {
+  background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
+  border-color: rgba(16, 185, 129, 0.12);
+}
+
+.widget-orange {
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3E2 100%);
+  border-color: rgba(245, 166, 35, 0.12);
+}
+
+.widget-emerald {
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  border-color: rgba(16, 185, 129, 0.12);
+}
+
+.widget-purple {
+  background: linear-gradient(135deg, #FAF5FF 0%, #F3EEFF 100%);
+  border-color: rgba(139, 92, 246, 0.12);
+}
+
+.widget-teal {
+  background: linear-gradient(135deg, #F0FDFA 0%, #E6F7FA 100%);
+  border-color: rgba(8, 145, 178, 0.12);
+}
+
+.widget-rose {
+  background: linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 100%);
+  border-color: rgba(244, 63, 94, 0.12);
+}
+
+/* Widget with chart (no hover lift) */
+.widget-chart {
+  background: var(--card-bg);
+  border-radius: 20px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-widget);
+}
+
+/* ========== Tier Strip (gradient bar at card top) ========== */
 .tier-strip {
   height: 3px;
   border-radius: 16px 16px 0 0;
   width: 100%;
 }
-.tier-strip-thriving { background: linear-gradient(90deg, #16A34A, #4ADE80); }
+.tier-strip-thriving { background: linear-gradient(90deg, #10B981, #34D399); }
 .tier-strip-stable { background: linear-gradient(90deg, #3B69B7, #60A5FA); }
 .tier-strip-needs-support { background: linear-gradient(90deg, #F5A623, #FBBF24); }
-.tier-strip-urgent { background: linear-gradient(90deg, #DC2626, #F87171); }
+.tier-strip-urgent { background: linear-gradient(90deg, #EF4444, #F87171); }
 
 /* ========== Tier Badge (enhanced pill) ========== */
 .tier-badge {
@@ -88,7 +167,7 @@ body {
   flex-shrink: 0;
 }
 
-/* Legacy tier badge classes (for backwards compat) */
+/* Legacy tier badge classes */
 .tier-thriving { background: #DCFCE7; color: #166534; }
 .tier-stable { background: #E8EEF7; color: #1E3A6E; }
 .tier-needs-support { background: #FEF3E2; color: #92400E; }
@@ -102,7 +181,7 @@ body {
   justify-content: center;
 }
 
-/* ========== Staggered Fade-In Animation ========== */
+/* ========== Animations ========== */
 @keyframes fadeSlideIn {
   from {
     opacity: 0;
@@ -114,8 +193,81 @@ body {
   }
 }
 
+@keyframes drawArc {
+  from {
+    stroke-dashoffset: var(--arc-length);
+  }
+  to {
+    stroke-dashoffset: var(--arc-target);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes countUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes widgetPulse {
+  0%, 100% { box-shadow: var(--shadow-widget); }
+  50% { box-shadow: 0 2px 8px rgba(59, 105, 183, 0.08), 0 8px 24px rgba(59, 105, 183, 0.06); }
+}
+
+@keyframes barGrow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
 .animate-card-in {
   animation: fadeSlideIn 0.4s ease-out both;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out both;
+}
+
+.animate-slide-in {
+  animation: slideInRight 0.4s ease-out both;
+}
+
+.animate-count-up {
+  animation: countUp 0.5s ease-out both;
+}
+
+.animate-bar-grow {
+  animation: barGrow 0.8s ease-out both;
+  transform-origin: left center;
 }
 
 /* ========== Avatar Circle ========== */
@@ -218,7 +370,7 @@ body {
 
 /* ========== Risk border accent ========== */
 .risk-border-high {
-  border-left: 3px solid #DC2626;
+  border-left: 3px solid #EF4444;
 }
 
 /* ========== Callout Box ========== */
@@ -250,4 +402,58 @@ body {
   height: 2px;
   background: var(--moobu-blue);
   border-radius: 1px;
+}
+
+/* ========== KPI Big Number ========== */
+.kpi-number {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.kpi-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* ========== Chart Container ========== */
+.chart-container {
+  border-radius: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  padding: 24px;
+  box-shadow: var(--shadow-widget);
+}
+
+/* ========== Vulnerability Gauge ========== */
+.vuln-gauge-track {
+  fill: none;
+  stroke: #F3F4F6;
+}
+
+.vuln-gauge-fill {
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s ease-out;
+}
+
+/* ========== Recharts Overrides ========== */
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}
+
+.recharts-default-tooltip {
+  border-radius: 12px !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow-card) !important;
+  padding: 12px 16px !important;
+}
+
+.recharts-legend-item-text {
+  font-size: 13px !important;
+  color: var(--muted) !important;
 }

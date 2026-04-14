@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { tierColor } from "@/lib/utils";
 
 interface ScoreRingProps {
@@ -9,11 +10,18 @@ interface ScoreRingProps {
 }
 
 export default function ScoreRing({ score, tier, size = 64 }: ScoreRingProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   const strokeWidth = size < 80 ? 4 : 5;
   const radius = (size - strokeWidth * 2) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = Math.min(Math.max(score, 0), 100) / 100;
-  const dashOffset = circumference * (1 - progress);
+  const dashOffset = mounted ? circumference * (1 - progress) : circumference;
   const color = tierColor(tier);
   const center = size / 2;
   const fontSize = size < 80 ? size * 0.28 : size * 0.24;
@@ -28,7 +36,7 @@ export default function ScoreRing({ score, tier, size = 64 }: ScoreRingProps) {
           cy={center}
           r={radius}
           fill="none"
-          stroke="#E5E7EB"
+          stroke="#F3F4F6"
           strokeWidth={strokeWidth}
         />
         {/* Colored arc */}
@@ -43,7 +51,7 @@ export default function ScoreRing({ score, tier, size = 64 }: ScoreRingProps) {
           strokeDasharray={circumference}
           strokeDashoffset={dashOffset}
           transform={`rotate(-90 ${center} ${center})`}
-          style={{ transition: "stroke-dashoffset 0.8s ease-out" }}
+          style={{ transition: "stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1)" }}
         />
         {/* Score number */}
         <text
@@ -65,7 +73,7 @@ export default function ScoreRing({ score, tier, size = 64 }: ScoreRingProps) {
             y={center + fontSize * 0.65}
             textAnchor="middle"
             dominantBaseline="central"
-            fill="#6B7280"
+            fill="#9CA3AF"
             fontSize={labelSize}
             fontFamily="Inter, system-ui, sans-serif"
           >

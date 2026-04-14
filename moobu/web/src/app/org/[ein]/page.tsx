@@ -3,14 +3,19 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   Legend,
+  ResponsiveContainer,
+  RadialBarChart,
+  RadialBar,
 } from "recharts";
 import { fetchNonprofit, fetchPeers } from "@/lib/api";
 import type { NonprofitProfile, PeerComparison } from "@/lib/types";
@@ -18,7 +23,7 @@ import Link from "next/link";
 import {
   formatCurrency,
   formatScore,
-  tierColor,
+  metricColor,
 } from "@/lib/utils";
 import ScoreRing from "@/components/ScoreRing";
 import TierBadge from "@/components/TierBadge";
@@ -87,11 +92,11 @@ export default function OrgDetailPage() {
     );
   }
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "overview", label: "Overview" },
-    { key: "people", label: "People" },
-    { key: "financials", label: "Financials" },
-    { key: "risk", label: "Risk" },
+  const tabs: { key: Tab; label: string; icon: string }[] = [
+    { key: "overview", label: "Overview", icon: "grid" },
+    { key: "people", label: "People", icon: "users" },
+    { key: "financials", label: "Financials", icon: "chart" },
+    { key: "risk", label: "Risk", icon: "alert" },
   ];
 
   return (
@@ -101,14 +106,23 @@ export default function OrgDetailPage() {
         href="/"
         className="inline-flex items-center gap-1 text-sm text-moobu-blue hover:underline mb-5"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </svg>
         Back to Portfolio
       </Link>
 
-      {/* Header Section */}
-      <div className="glass-card p-6 mb-6 animate-card-in">
+      {/* Hero Header */}
+      <div className="widget-chart p-6 mb-6 animate-card-in">
         <div className="flex flex-wrap items-start gap-6">
           {/* Score Ring */}
           <ScoreRing
@@ -120,7 +134,7 @@ export default function OrgDetailPage() {
           {/* Org Info */}
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-3 mb-2">
-              <h1 className="text-2xl font-bold text-foreground">
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">
                 {profile.org_name || "Unknown Organization"}
               </h1>
               <TierBadge tier={profile.tier || "Stable"} />
@@ -137,14 +151,22 @@ export default function OrgDetailPage() {
             <div className="flex flex-wrap gap-2">
               {profile.state && (
                 <span className="detail-pill">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
                   {profile.state}
                 </span>
               )}
               {profile.formation_year && (
-                <span className="detail-pill">
-                  Founded {profile.formation_year}
-                </span>
+                <span className="detail-pill">Founded {profile.formation_year}</span>
               )}
               {profile.employee_count != null && profile.employee_count > 0 && (
                 <span className="detail-pill">
@@ -167,13 +189,22 @@ export default function OrgDetailPage() {
                   rel="noopener noreferrer"
                   className="detail-pill hover:bg-moobu-blue-light transition-colors"
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="2" y1="12" x2="22" y2="12" />
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                  </svg>
                   Website
                 </a>
               )}
-              <span className="detail-pill">
-                EIN: {profile.ein}
-              </span>
+              <span className="detail-pill">EIN: {profile.ein}</span>
               <span className="detail-pill">
                 {profile.years_of_data} yrs data ({profile.confidence})
               </span>
@@ -196,18 +227,10 @@ export default function OrgDetailPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === "overview" && (
-        <OverviewTab profile={profile} />
-      )}
-      {activeTab === "people" && (
-        <PeopleTab profile={profile} />
-      )}
-      {activeTab === "financials" && (
-        <FinancialsTab profile={profile} />
-      )}
-      {activeTab === "risk" && (
-        <RiskTab profile={profile} peers={peers} />
-      )}
+      {activeTab === "overview" && <OverviewTab profile={profile} />}
+      {activeTab === "people" && <PeopleTab profile={profile} />}
+      {activeTab === "financials" && <FinancialsTab profile={profile} />}
+      {activeTab === "risk" && <RiskTab profile={profile} peers={peers} />}
     </div>
   );
 }
@@ -221,8 +244,7 @@ function OverviewTab({ profile }: { profile: NonprofitProfile }) {
         key,
         label,
         value:
-          (profile.metrics as unknown as Record<string, number | null>)[key] ??
-          0,
+          (profile.metrics as unknown as Record<string, number | null>)[key] ?? 0,
       }))
     : [];
 
@@ -231,7 +253,7 @@ function OverviewTab({ profile }: { profile: NonprofitProfile }) {
   return (
     <div className="space-y-6 animate-card-in">
       {/* About card */}
-      <div className="glass-card p-6">
+      <div className="widget-chart p-6">
         <h2 className="text-lg font-semibold mb-3">About</h2>
         {profile.mission_description ? (
           <p className="text-sm text-muted leading-relaxed mb-4">
@@ -250,27 +272,28 @@ function OverviewTab({ profile }: { profile: NonprofitProfile }) {
           {profile.formation_year && (
             <MiniStat label="Founded" value={String(profile.formation_year)} />
           )}
-          <MiniStat
-            label="Confidence"
-            value={profile.confidence || "N/A"}
-          />
+          <MiniStat label="Confidence" value={profile.confidence || "N/A"} />
         </div>
       </div>
 
       {/* Score Breakdown */}
       {metricEntries.length > 0 && (
-        <div className="glass-card p-6">
-          <h2 className="text-lg font-semibold mb-4">
+        <div className="widget-chart p-6">
+          <h2 className="text-lg font-semibold mb-1">
             Resilience Score Breakdown
           </h2>
-          <div className="space-y-3">
-            {metricEntries.map((m) => (
-              <MetricBar
+          <p className="text-xs text-muted mb-5">
+            Individual metric scores out of 10
+          </p>
+          <div className="space-y-4">
+            {metricEntries.map((m, i) => (
+              <ColorMetricBar
                 key={m.key}
                 label={m.label}
                 value={m.value}
                 maxValue={10}
-                tier={profile.tier}
+                color={metricColor(m.key)}
+                index={i}
               />
             ))}
           </div>
@@ -280,21 +303,24 @@ function OverviewTab({ profile }: { profile: NonprofitProfile }) {
       {/* Key Financial Stats */}
       {latest && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FinStatCard
-            label="Total Revenue"
-            value={formatCurrency(latest.total_revenue)}
-            color="#3B69B7"
-          />
-          <FinStatCard
-            label="Total Expenses"
-            value={formatCurrency(latest.total_expenses)}
-            color="#F5A623"
-          />
-          <FinStatCard
-            label="Net Assets"
-            value={formatCurrency(latest.net_assets_eoy)}
-            color="#16A34A"
-          />
+          <div className="widget widget-blue animate-card-in" style={{ animationDelay: "0ms" }}>
+            <p className="kpi-label mb-2">Total Revenue</p>
+            <p className="kpi-number text-[#3B69B7]">
+              {formatCurrency(latest.total_revenue)}
+            </p>
+          </div>
+          <div className="widget widget-rose animate-card-in" style={{ animationDelay: "60ms" }}>
+            <p className="kpi-label mb-2">Total Expenses</p>
+            <p className="kpi-number text-[#F43F5E]">
+              {formatCurrency(latest.total_expenses)}
+            </p>
+          </div>
+          <div className="widget widget-emerald animate-card-in" style={{ animationDelay: "120ms" }}>
+            <p className="kpi-label mb-2">Net Assets</p>
+            <p className="kpi-number text-[#10B981]">
+              {formatCurrency(latest.net_assets_eoy)}
+            </p>
+          </div>
         </div>
       )}
     </div>
@@ -310,11 +336,25 @@ function PeopleTab({ profile }: { profile: NonprofitProfile }) {
   if (people.length === 0) {
     return (
       <div className="text-center py-16 text-muted animate-card-in">
-        <svg className="mx-auto mb-3" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.4">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        <svg
+          className="mx-auto mb-3"
+          width="48"
+          height="48"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          opacity="0.4"
+        >
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
         <p className="text-lg mb-1">No people data available</p>
-        <p className="text-sm">Officer and director information may not be included in this filing.</p>
+        <p className="text-sm">
+          Officer and director information may not be included in this filing.
+        </p>
       </div>
     );
   }
@@ -341,19 +381,60 @@ function FinancialsTab({ profile }: { profile: NonprofitProfile }) {
     year: f.tax_year,
     Revenue: f.total_revenue || 0,
     Expenses: f.total_expenses || 0,
-    "Net Assets": f.net_assets_eoy || 0,
   }));
 
   const latest = profile.financials.at(-1);
 
+  // Revenue composition donut
+  const revenueData = latest
+    ? [
+        {
+          name: "Contributions & Grants",
+          value: latest.contributions_grants || 0,
+          color: "#8B5CF6",
+        },
+        {
+          name: "Program Revenue",
+          value: latest.program_service_rev || 0,
+          color: "#0891B2",
+        },
+        {
+          name: "Investment Income",
+          value: latest.investment_income || 0,
+          color: "#F5A623",
+        },
+        {
+          name: "Other Revenue",
+          value: latest.other_revenue || 0,
+          color: "#6B7280",
+        },
+      ].filter((d) => d.value > 0)
+    : [];
+
+  // Year-over-year table data
+  const yoyData = [...profile.financials].reverse();
+
   return (
     <div className="space-y-6 animate-card-in">
-      {/* Financial Trajectory Chart */}
-      <div className="glass-card p-6">
-        <h2 className="text-lg font-semibold mb-4">Financial Trajectory</h2>
+      {/* Revenue & Expenses Area Chart */}
+      <div className="widget-chart p-6">
+        <h2 className="text-lg font-semibold mb-1">Revenue & Expenses</h2>
+        <p className="text-xs text-muted mb-4">
+          Financial trajectory over time
+        </p>
         {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={chartData}>
+          <ResponsiveContainer width="100%" height={320}>
+            <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3B69B7" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#3B69B7" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gradExpenses" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#F43F5E" stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
               <XAxis dataKey="year" tick={{ fontSize: 12 }} />
               <YAxis
@@ -371,63 +452,124 @@ function FinancialsTab({ profile }: { profile: NonprofitProfile }) {
                 labelFormatter={(label) => `Tax Year ${label}`}
               />
               <Legend />
-              <Line
+              <Area
                 type="monotone"
                 dataKey="Revenue"
                 stroke="#3B69B7"
                 strokeWidth={2.5}
+                fill="url(#gradRevenue)"
                 dot={{ r: 4 }}
                 activeDot={{ r: 6 }}
               />
-              <Line
+              <Area
                 type="monotone"
                 dataKey="Expenses"
-                stroke="#F5A623"
+                stroke="#F43F5E"
                 strokeWidth={2.5}
+                fill="url(#gradExpenses)"
                 dot={{ r: 4 }}
                 activeDot={{ r: 6 }}
               />
-              <Line
-                type="monotone"
-                dataKey="Net Assets"
-                stroke="#16A34A"
-                strokeWidth={2.5}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-            </LineChart>
+            </AreaChart>
           </ResponsiveContainer>
         ) : (
           <p className="text-muted text-sm">No financial data available.</p>
         )}
       </div>
 
-      {/* Revenue Breakdown */}
-      {latest && (
-        <div className="glass-card p-6">
-          <h2 className="text-lg font-semibold mb-4">
-            Revenue Breakdown (Latest Year)
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <MiniStat
-              label="Contributions & Grants"
-              value={formatCurrency(latest.contributions_grants)}
-            />
-            <MiniStat
-              label="Program Service Revenue"
-              value={formatCurrency(latest.program_service_rev)}
-            />
-            <MiniStat
-              label="Investment Income"
-              value={formatCurrency(latest.investment_income)}
-            />
-            <MiniStat
-              label="Other Revenue"
-              value={formatCurrency(latest.other_revenue)}
-            />
+      {/* Revenue Composition & YOY side-by-side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Revenue Composition Donut */}
+        {revenueData.length > 0 && (
+          <div className="widget-chart p-6">
+            <h2 className="text-base font-semibold mb-1">
+              Revenue Composition
+            </h2>
+            <p className="text-xs text-muted mb-4">Latest tax year breakdown</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={revenueData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={85}
+                  paddingAngle={3}
+                  dataKey="value"
+                  stroke="none"
+                >
+                  {revenueData.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value) => formatCurrency(Number(value))}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2 justify-center">
+              {revenueData.map((entry) => (
+                <div key={entry.name} className="flex items-center gap-2">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full inline-block"
+                    style={{ backgroundColor: entry.color }}
+                  />
+                  <span className="text-xs text-muted">{entry.name}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Year-over-Year Table */}
+        {yoyData.length > 0 && (
+          <div className="widget-chart p-6">
+            <h2 className="text-base font-semibold mb-1">
+              Year-over-Year Comparison
+            </h2>
+            <p className="text-xs text-muted mb-4">
+              Financial summary by tax year
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-muted">
+                    <th className="px-3 py-2 text-xs font-medium">Year</th>
+                    <th className="px-3 py-2 text-xs font-medium text-right">
+                      Revenue
+                    </th>
+                    <th className="px-3 py-2 text-xs font-medium text-right">
+                      Expenses
+                    </th>
+                    <th className="px-3 py-2 text-xs font-medium text-right">
+                      Net Assets
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {yoyData.map((f) => (
+                    <tr
+                      key={f.tax_year}
+                      className="border-b border-border/50 hover:bg-gray-50/50 transition-colors"
+                    >
+                      <td className="px-3 py-2.5 font-medium">{f.tax_year}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs">
+                        {formatCurrency(f.total_revenue)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs">
+                        {formatCurrency(f.total_expenses)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs">
+                        {formatCurrency(f.net_assets_eoy)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -449,94 +591,143 @@ function RiskTab({
       ? (profile.vulnerability_score * 100).toFixed(0)
       : null;
 
+  // Radial gauge data for vulnerability
+  const gaugeData = vulnPct
+    ? [
+        {
+          name: "Vulnerability",
+          value: Number(vulnPct),
+          fill:
+            profile.vulnerability_score! > 0.7
+              ? "#EF4444"
+              : profile.vulnerability_score! > 0.3
+              ? "#F5A623"
+              : "#10B981",
+        },
+      ]
+    : [];
+
   return (
     <div className="space-y-6 animate-card-in">
       {/* Vulnerability Gauge */}
-      <div className="glass-card p-6 flex flex-wrap items-center gap-6">
-        <div className="text-center">
-          <p className="text-xs text-muted uppercase tracking-wide mb-2">
-            Vulnerability Score
-          </p>
-          {vulnPct != null ? (
-            <p
-              className="text-5xl font-bold"
-              style={{
-                color:
-                  profile.vulnerability_score! > 0.7
-                    ? "#DC2626"
-                    : profile.vulnerability_score! > 0.3
-                    ? "#F5A623"
-                    : "#16A34A",
-              }}
-            >
-              {vulnPct}%
-            </p>
-          ) : (
-            <p className="text-3xl font-bold text-thriving">Low Risk</p>
+      <div className="widget-chart p-6">
+        <div className="flex flex-wrap items-center gap-8">
+          {/* Gauge */}
+          <div className="flex-shrink-0">
+            {gaugeData.length > 0 ? (
+              <div className="relative">
+                <ResponsiveContainer width={200} height={140}>
+                  <RadialBarChart
+                    cx="50%"
+                    cy="100%"
+                    innerRadius={60}
+                    outerRadius={90}
+                    startAngle={180}
+                    endAngle={0}
+                    barSize={12}
+                    data={gaugeData}
+                  >
+                    <RadialBar
+                      dataKey="value"
+                      cornerRadius={6}
+                      background={{ fill: "#F3F4F6" }}
+                    />
+                  </RadialBarChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex items-end justify-center pb-4">
+                  <div className="text-center">
+                    <p
+                      className="text-3xl font-bold"
+                      style={{
+                        color: gaugeData[0].fill,
+                      }}
+                    >
+                      {vulnPct}%
+                    </p>
+                    <p className="text-[10px] text-muted uppercase tracking-wider">
+                      Vulnerability
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center px-8 py-6">
+                <p className="text-4xl font-bold text-[#10B981]">Low</p>
+                <p className="text-xs text-muted uppercase tracking-wider mt-1">
+                  Risk Level
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Vulnerability bar */}
+          {vulnPct != null && (
+            <div className="flex-1 min-w-[200px]">
+              <p className="text-sm font-medium text-foreground mb-2">
+                Risk Assessment
+              </p>
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-1000"
+                  style={{
+                    width: `${vulnPct}%`,
+                    background:
+                      profile.vulnerability_score! > 0.7
+                        ? "linear-gradient(90deg, #EF4444, #F87171)"
+                        : profile.vulnerability_score! > 0.3
+                        ? "linear-gradient(90deg, #F5A623, #FBBF24)"
+                        : "linear-gradient(90deg, #10B981, #34D399)",
+                  }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-muted mt-1">
+                <span>Low Risk</span>
+                <span>High Risk</span>
+              </div>
+            </div>
           )}
         </div>
-        {vulnPct != null && (
-          <div className="flex-1 min-w-[200px]">
-            <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-700"
-                style={{
-                  width: `${vulnPct}%`,
-                  background:
-                    profile.vulnerability_score! > 0.7
-                      ? "linear-gradient(90deg, #DC2626, #F87171)"
-                      : profile.vulnerability_score! > 0.3
-                      ? "linear-gradient(90deg, #F5A623, #FBBF24)"
-                      : "linear-gradient(90deg, #16A34A, #4ADE80)",
-                }}
-              />
-            </div>
-            <div className="flex justify-between text-xs text-muted mt-1">
-              <span>Low</span>
-              <span>High</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Warning Factors */}
       {hasWarnings && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold">Early Warning Signals</h2>
-          {profile.warning_factors!.map((factor, i) => (
-            <div
-              key={i}
-              className={
-                profile.vulnerability_score != null &&
-                profile.vulnerability_score > 0.7
-                  ? "alert-card-urgent"
-                  : "alert-card"
-              }
-              style={{ borderRadius: 12, padding: 16 }}
-            >
-              <div className="flex items-start gap-2">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke={
-                    profile.vulnerability_score != null &&
-                    profile.vulnerability_score > 0.7
-                      ? "#DC2626"
-                      : "#F5A623"
-                  }
-                  strokeWidth="2"
-                  className="flex-shrink-0 mt-0.5"
-                >
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                  <line x1="12" y1="9" x2="12" y2="13" />
-                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-                <span className="text-sm">{factor}</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {profile.warning_factors!.map((factor, i) => (
+              <div
+                key={i}
+                className={`rounded-2xl p-4 border ${
+                  profile.vulnerability_score != null &&
+                  profile.vulnerability_score > 0.7
+                    ? "bg-red-50 border-red-200/60"
+                    : "bg-amber-50 border-amber-200/60"
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={
+                      profile.vulnerability_score != null &&
+                      profile.vulnerability_score > 0.7
+                        ? "#EF4444"
+                        : "#F5A623"
+                    }
+                    strokeWidth="2"
+                    className="flex-shrink-0 mt-0.5"
+                  >
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  <span className="text-sm leading-relaxed">{factor}</span>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
@@ -554,7 +745,7 @@ function RiskTab({
 
       {/* Peer Comparison */}
       {peers && peers.peers.length > 0 && (
-        <div className="glass-card p-6">
+        <div className="widget-chart p-6">
           <h2 className="text-lg font-semibold mb-1">Peer Comparison</h2>
           <p className="text-sm text-muted mb-4">
             {peers.peers.length} similar organizations in {profile.state}
@@ -565,14 +756,20 @@ function RiskTab({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted">
-                  <th className="px-4 py-3">Organization</th>
-                  <th className="px-4 py-3 text-right">Score</th>
-                  <th className="px-4 py-3">Tier</th>
-                  <th className="px-4 py-3 text-right">Revenue</th>
+                  <th className="px-4 py-3 text-xs font-medium">
+                    Organization
+                  </th>
+                  <th className="px-4 py-3 text-xs font-medium text-right">
+                    Score
+                  </th>
+                  <th className="px-4 py-3 text-xs font-medium">Tier</th>
+                  <th className="px-4 py-3 text-xs font-medium text-right">
+                    Revenue
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {/* Highlight current org */}
+                {/* Current org row */}
                 <tr className="border-b border-border bg-moobu-blue-light/40">
                   <td className="px-4 py-3 font-medium">
                     {profile.org_name || "This Organization"}{" "}
@@ -593,12 +790,12 @@ function RiskTab({
                 {peers.peers.map((peer) => (
                   <tr
                     key={peer.ein}
-                    className="border-b border-border hover:bg-gray-50 transition-colors"
+                    className="border-b border-border/50 hover:bg-gray-50 transition-colors"
                   >
                     <td className="px-4 py-3">
                       <Link
                         href={`/org/${peer.ein}`}
-                        className="hover:text-moobu-blue"
+                        className="hover:text-moobu-blue transition-colors"
                       >
                         {peer.org_name || "Unknown"}
                       </Link>
@@ -623,11 +820,23 @@ function RiskTab({
       {/* No risk info */}
       {!hasWarnings && !profile.recommendation && vulnPct == null && (
         <div className="text-center py-12 text-muted">
-          <svg className="mx-auto mb-3" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.4">
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+          <svg
+            className="mx-auto mb-3"
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            opacity="0.4"
+          >
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
           </svg>
           <p className="text-lg mb-1">No risk indicators</p>
-          <p className="text-sm">This organization shows healthy financial patterns.</p>
+          <p className="text-sm">
+            This organization shows healthy financial patterns.
+          </p>
         </div>
       )}
     </div>
@@ -647,56 +856,42 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MetricBar({
+function ColorMetricBar({
   label,
   value,
   maxValue,
-  tier,
+  color,
+  index,
 }: {
   label: string;
   value: number;
   maxValue: number;
-  tier: string | null;
+  color: string;
+  index: number;
 }) {
   const pct = Math.min(Math.max((value / maxValue) * 100, 0), 100);
-  const color = tierColor(tier);
 
   return (
-    <div className="flex items-center gap-3">
+    <div
+      className="flex items-center gap-3 animate-slide-in"
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
       <span className="text-xs text-muted w-36 text-right flex-shrink-0">
         {label}
       </span>
       <div className="metric-bar-track flex-1">
         <div
-          className="metric-bar-fill"
+          className="metric-bar-fill animate-bar-grow"
           style={{
             width: `${pct}%`,
             backgroundColor: color,
+            animationDelay: `${index * 50 + 200}ms`,
           }}
         />
       </div>
-      <span className="text-xs font-mono font-medium w-10 text-right">
+      <span className="text-xs font-mono font-semibold w-10 text-right" style={{ color }}>
         {value.toFixed(1)}
       </span>
-    </div>
-  );
-}
-
-function FinStatCard({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color: string;
-}) {
-  return (
-    <div className="glass-card p-5">
-      <p className="text-xs text-muted mb-1">{label}</p>
-      <p className="text-xl font-bold" style={{ color }}>
-        {value}
-      </p>
     </div>
   );
 }
