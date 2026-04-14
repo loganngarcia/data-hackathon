@@ -2,6 +2,10 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  clampPortfolioFloatingMenuRect,
+  estimatePortfolioMenuHeight,
+} from "./portfolio-floating-menu-rect";
 
 /** Sentinel: second column shows portfolio peer medians from benchmarks. */
 export const METRICS_COMPARE_MEDIAN = "__portfolio_median__";
@@ -77,12 +81,10 @@ export function MetricsComparePeerPicker({ options, value, onChange }: Props) {
     const el = chipRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setFixedPos({
-      top: r.bottom + 4,
-      left: r.left,
-      width: Math.max(r.width, 248),
-    });
-  }, []);
+    const rawW = Math.max(r.width, 248);
+    const estH = estimatePortfolioMenuHeight(options.length, undefined);
+    setFixedPos(clampPortfolioFloatingMenuRect(r, rawW, estH));
+  }, [options.length]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");

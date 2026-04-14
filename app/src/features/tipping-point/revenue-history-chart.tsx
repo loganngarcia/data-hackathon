@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { formatCompactCurrency, formatSignedPercent, formatUsdFull } from "@/lib/format-display";
+import { getCachedNonprofitFilingsJson, setCachedNonprofitFilingsJson } from "./org-detail-fetch-cache";
 
 type FilingPoint = { year: number; revenue: number; expenses: number; netAssets: number };
 
@@ -75,18 +76,60 @@ type TooltipState = {
 
 const PLOT_PAD = { t: 16, r: 16, b: 28, l: 16 } as const;
 
+function clientToSvgX(clientX: number, svg: SVGSVGElement): number {
+  const rect = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  return ((clientX - rect.left) / rect.width) * vb.width;
+}
+
+function nearestIndexBySvgX(xSvg: number, projected: ProjectedPoint[]): number {
+  let best = 0;
+  let bestD = Infinity;
+  projected.forEach((p, i) => {
+    const d = Math.abs(p.x - xSvg);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  });
+  return best;
+}
+
+function filingsFromCache(ein: string): { data: FilingsPayload | null; ready: boolean } {
+  const j = getCachedNonprofitFilingsJson(ein);
+  if (!j) return { data: null, ready: false };
+  try {
+    return { data: JSON.parse(j) as FilingsPayload, ready: true };
+  } catch {
+    return { data: null, ready: false };
+  }
+}
+
 export function RevenueHistoryChart({ ein }: { ein: string }) {
   const gradId = useId().replace(/:/g, "");
-  const [data, setData] = useState<FilingsPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const init = filingsFromCache(ein);
+  const [data, setData] = useState<FilingsPayload | null>(init.data);
+  const [loading, setLoading] = useState(!init.ready);
   const [plotWidth, setPlotWidth] = useState(640);
   const plotRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const [tip, setTip] = useState<TooltipState>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const q = encodeURIComponent(ein);
+    const cachedJson = getCachedNonprofitFilingsJson(ein);
+    if (cachedJson) {
+      try {
+        const parsed = JSON.parse(cachedJson) as FilingsPayload & { error?: string };
+        setData(parsed);
+        setLoading(false);
+        return;
+      } catch {
+        /* fall through to network */
+      }
+    }
     setLoading(true);
     fetch(`/api/nonprofit-filings?ein=${q}`)
       .then(async (res) => {
@@ -107,6 +150,7 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
       })
       .then((json) => {
         if (!cancelled) {
+          setCachedNonprofitFilingsJson(ein, JSON.stringify(json));
           setData(json);
         }
       })
@@ -150,30 +194,48 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
     return layoutNetAssetsSeries(data.points, plotWidth, plotHeight, PLOT_PAD);
   }, [data?.points, plotWidth, plotHeight]);
 
-  const showTip = (index: number, el: SVGCircleElement) => {
-    const wrap = plotRef.current;
-    if (!wrap || !geometry) return;
-    const projected = geometry.projected[index];
-    const marginPct =
-      projected.revenue > 0
-        ? ((projected.revenue - projected.expenses) / projected.revenue) * 100
-        : null;
+  const updateTipFromIndex = useCallback(
+    (index: number, svg: SVGSVGElement) => {
+      const wrap = plotRef.current;
+      if (!wrap || !geometry?.projected[index]) return;
+      const projected = geometry.projected[index]!;
+      const marginPct =
+        projected.revenue > 0
+          ? ((projected.revenue - projected.expenses) / projected.revenue) * 100
+          : null;
 
-    const rect = el.getBoundingClientRect();
-    const wrapRect = wrap.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2 - wrapRect.left;
-    const cy = rect.top + rect.height / 2 - wrapRect.top;
+      const pt = svg.createSVGPoint();
+      pt.x = projected.x;
+      pt.y = projected.yNetAssets;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      const screen = pt.matrixTransform(ctm);
+      const wrapRect = wrap.getBoundingClientRect();
 
-    setHoveredIndex(index);
-    setTip({
-      left: cx,
-      top: cy,
-      year: projected.year,
-      revenue: projected.revenue,
-      expenses: projected.expenses,
-      netAssets: projected.netAssets,
-      marginPct,
-    });
+      setHoveredIndex(index);
+      setTip({
+        left: screen.x - wrapRect.left,
+        top: screen.y - wrapRect.top,
+        year: projected.year,
+        revenue: projected.revenue,
+        expenses: projected.expenses,
+        netAssets: projected.netAssets,
+        marginPct,
+      });
+    },
+    [geometry],
+  );
+
+  const handleOverlayPointer = (
+    e: React.MouseEvent<SVGRectElement> | React.TouchEvent<SVGRectElement>,
+  ) => {
+    const svg = svgRef.current;
+    if (!svg || !geometry?.projected.length) return;
+    const clientX =
+      "touches" in e && e.touches.length > 0 ? e.touches[0]!.clientX : (e as React.MouseEvent).clientX;
+    const xSvg = clientToSvgX(clientX, svg);
+    const idx = nearestIndexBySvgX(xSvg, geometry.projected);
+    updateTipFromIndex(idx, svg);
   };
 
   const hideTip = () => {
@@ -237,6 +299,7 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
         ) : null}
 
         <svg
+          ref={svgRef}
           className={`tp-revenue-chart-svg ${modeClass}`}
           viewBox={`0 0 ${vbW} ${vbH}`}
           width="100%"
@@ -263,20 +326,20 @@ export function RevenueHistoryChart({ ein }: { ein: string }) {
               />
             </>
           ) : null}
-          {geometry?.projected.map((p, i) => (
-            <circle
-              key={`hit-${p.year}`}
-              cx={p.x}
-              cy={p.yNetAssets}
-              r={22}
+          {geometry ? (
+            <rect
+              x={0}
+              y={0}
+              width={vbW}
+              height={vbH}
               fill="transparent"
-              style={{ cursor: "pointer" }}
-              onMouseEnter={(e) => showTip(i, e.currentTarget)}
-              onMouseLeave={hideTip}
-              onFocus={(e) => showTip(i, e.currentTarget)}
-              onBlur={hideTip}
+              style={{ cursor: "crosshair", touchAction: "none" }}
+              onMouseMove={handleOverlayPointer}
+              onMouseEnter={handleOverlayPointer}
+              onTouchStart={handleOverlayPointer}
+              onTouchMove={handleOverlayPointer}
             />
-          ))}
+          ) : null}
           {hoveredIndex !== null && geometry?.projected[hoveredIndex] ? (
             <g pointerEvents="none">
               <circle

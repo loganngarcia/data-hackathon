@@ -6,10 +6,12 @@ import {
   type OpenAIFilePartInput,
   type OpenAIImagePartInput,
 } from "@/lib/openai-multimodal-user-content";
+import { NONPROFIT_SEARCH_SYSTEM_INSTRUCTION } from "@/lib/gemini-nonprofit-tools";
 import {
   runOpenAINonprofitToolAgent,
   streamOpenAINonprofitToolAgentAsGeminiSSE,
 } from "@/lib/run-openai-nonprofit-tools";
+import { mergeNonprofitSystemWithUserProfile, parseUserProfilePayload } from "@/lib/user-profile-system";
 
 /**
  * Chat API (OpenAI): `POST /api/gemini` — path kept for existing ChatBar / `streamGeminiReply`.
@@ -41,6 +43,8 @@ export async function POST(req: Request) {
     stream?: boolean;
     useNonprofitSearchTools?: boolean;
     maxTurns?: number;
+    /** Optional "You" profile from localStorage — merged into system instructions when tools are on. */
+    userProfile?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -83,6 +87,12 @@ export async function POST(req: Request) {
   const stream = body.stream === true;
   const useTools = body.useNonprofitSearchTools !== false;
 
+  const userProfile = parseUserProfilePayload(body.userProfile);
+  const nonprofitSystemInstruction = mergeNonprofitSystemWithUserProfile(
+    NONPROFIT_SEARCH_SYSTEM_INSTRUCTION,
+    userProfile,
+  );
+
   const openai = new OpenAI({ apiKey });
 
   if (useTools) {
@@ -91,6 +101,7 @@ export async function POST(req: Request) {
         model,
         userContent,
         maxTurns: body.maxTurns,
+        systemInstruction: nonprofitSystemInstruction,
       });
       return new NextResponse(sseBody, {
         status: 200,
@@ -107,6 +118,7 @@ export async function POST(req: Request) {
       model,
       userContent,
       maxTurns: body.maxTurns,
+      systemInstruction: nonprofitSystemInstruction,
     });
 
     if (!agent.ok) {
@@ -124,15 +136,25 @@ export async function POST(req: Request) {
       model,
       steps: agent.steps,
       turns: agent.turns,
+      ...(agent.nonprofitSearchCards?.length
+        ? { nonprofitSearchCards: agent.nonprofitSearchCards }
+        : {}),
     });
   }
+
+  const plainChatSystemBase =
+    "You are a helpful assistant for the Tipping Point nonprofit dashboard. Follow the user's instructions.";
+  const plainSystemInstruction = mergeNonprofitSystemWithUserProfile(plainChatSystemBase, userProfile);
 
   if (stream) {
     let s;
     try {
       s = await openai.chat.completions.create({
         model,
-        messages: [{ role: "user", content: userContent }],
+        messages: [
+          { role: "system", content: plainSystemInstruction },
+          { role: "user", content: userContent },
+        ],
         stream: true,
       });
     } catch (e) {
@@ -181,7 +203,10 @@ export async function POST(req: Request) {
   try {
     completion = await openai.chat.completions.create({
       model,
-      messages: [{ role: "user", content: userContent }],
+      messages: [
+        { role: "system", content: plainSystemInstruction },
+        { role: "user", content: userContent },
+      ],
     });
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e);

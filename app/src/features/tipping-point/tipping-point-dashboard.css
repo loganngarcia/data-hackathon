@@ -44,6 +44,28 @@
   box-sizing: border-box;
 }
 
+/* Chat route + ?org=: no portfolio column — rail/sheet is fixed; shell must not consume main scroll height */
+.tp-dashboard-shell--rail-only {
+  min-height: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  background: transparent;
+}
+
+.tp-dashboard-shell--rail-only .tp-org-detail-rail,
+.tp-dashboard-shell--rail-only .hp-dash [role="presentation"] {
+  pointer-events: auto;
+}
+
+/* Desktop org rail: round the edge toward main content; no left hairline (panel meets padded column) */
+.tp-org-detail-rail {
+  border-top-left-radius: 48px;
+  border-bottom-left-radius: 48px;
+  border-left: none;
+  overflow: hidden;
+}
+
 /* Homepage mosaic layout (from data-hackathon-dashboard dashboard.css) */
 @keyframes homepageSkeleton {
   0%,
@@ -72,6 +94,7 @@
   align-items: flex-start;
   align-self: stretch;
   gap: 48px;
+  overflow: visible;
 }
 
 @media (max-width: 767px) {
@@ -100,6 +123,11 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Portfolio home: don’t clip filter dropdowns / focus rings (scroll lives on `.main-scroll`). */
+.hp-dash > section.hp-sec[aria-label="Organizations"] {
+  overflow: visible;
 }
 
 .hp-thirds {
@@ -151,6 +179,51 @@
   min-height: 160px;
 }
 
+/* AI recommendations block (matches existing card + skeleton patterns) */
+.tp-rec-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.tp-rec-skel-line {
+  height: 12px;
+  border-radius: 8px;
+}
+
+.tp-rec-skel-line--title {
+  height: 18px;
+  max-width: 92%;
+}
+
+.tp-rec-skel-line--body {
+  height: 13px;
+  max-width: 100%;
+}
+
+.tp-rec-skel-line--body.tp-rec-skel-line--short {
+  max-width: 78%;
+}
+
+.tp-rec-skel-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: auto;
+}
+
+.tp-rec-skel-metric {
+  min-width: 88px;
+}
+
+.tp-rec-memo-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .hp-mosaic {
   align-self: stretch;
   display: grid;
@@ -160,6 +233,62 @@
   gap: 12px;
   align-items: stretch;
   min-width: 0;
+}
+
+/* Overview rail: org identity card only — single column */
+.tp-overview-mosaic.hp-mosaic {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Finances: net assets chart + 2×2 metrics — stack vs row by container width */
+.tp-finances-metrics-row {
+  align-self: stretch;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  container-type: inline-size;
+  container-name: finances;
+}
+
+.tp-finances-chart-slot {
+  width: 100%;
+  min-width: 0;
+}
+
+.tp-revenue-wide--in-finances-row {
+  margin-top: 0;
+}
+
+.tp-finances-grid-slot {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  justify-content: stretch;
+  align-items: flex-start;
+}
+
+/* Wide enough: chart + metrics share row; metrics grid fills its column (128px row height, full width) */
+@container finances (min-width: 552px) {
+  .tp-finances-metrics-row {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .tp-finances-chart-slot {
+    flex: 1 1 0;
+    min-width: 256px;
+    min-height: 0;
+  }
+
+  .tp-finances-grid-slot {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: stretch;
+    margin-left: 0;
+    align-self: stretch;
+  }
 }
 
 /* Fill column width; height from content + optional minHeight (JS) to match metrics square */
@@ -260,20 +389,23 @@
   }
 }
 
-.tp-mosaic-metrics-grid {
-  align-self: center;
-  justify-self: end;
+/* Org detail Finances: 2×2 with fixed 128px row height, columns share width (not square tiles) */
+.tp-mosaic-metrics-grid--finances {
+  width: 100%;
+  max-width: 100%;
   display: grid;
-  /* Desktop: fixed 136×136 tiles + 12px gap → 284×284 block */
-  grid-template-columns: 136px 136px;
-  grid-template-rows: 136px 136px;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 128px 128px;
   gap: 12px;
   min-width: 0;
   box-sizing: border-box;
+  align-self: stretch;
+  justify-self: stretch;
 }
 
 .tp-mosaic-metric-tile {
-  justify-content: center;
+  justify-content: flex-start;
+  align-items: flex-start;
   min-width: 0;
   min-height: 0;
   width: 100%;
@@ -281,8 +413,25 @@
   box-sizing: border-box;
 }
 
+/* Kicker top-left; big number vertically centered in the space below, still left-aligned */
+.tp-mosaic-metric-tile .tp-kicker {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.tp-mosaic-metric-tile .tp-metric-value {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 0;
+  margin: 0;
+  width: 100%;
+}
+
 @media (min-width: 768px) {
-  .tp-mosaic-metrics-grid .tp-mosaic-metric-tile.tp-card-stacked {
+  .tp-mosaic-metrics-grid--finances .tp-mosaic-metric-tile.tp-card-stacked {
     padding: 12px 12px;
     gap: 8px;
   }
@@ -604,19 +753,17 @@
     justify-self: stretch;
   }
 
-  .tp-mosaic-metrics-grid {
+  .tp-mosaic-metrics-grid--finances {
     width: 100% !important;
-    height: auto !important;
     max-width: 100%;
-    justify-self: stretch;
     grid-template-columns: 1fr 1fr !important;
-    grid-template-rows: auto auto !important;
+    grid-template-rows: 128px 128px !important;
   }
 
-  .tp-mosaic-metric-tile {
-    aspect-ratio: 1;
+  .tp-mosaic-metrics-grid--finances .tp-mosaic-metric-tile {
+    aspect-ratio: unset;
     width: 100%;
-    height: auto;
+    height: 100%;
     min-height: 0;
   }
 }
@@ -682,9 +829,69 @@
   gap: 12px;
 }
 
+/* Metrics: column titles above; one card per metric per side (paired rows). */
+.tp-metrics-compare-grid {
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.tp-metrics-compare-head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-metrics-compare-head-peer {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Peer picker fills its column so the label can ellipsis on narrow viewports */
+.tp-metrics-compare-head-peer .tp-panel-compare-peer-picker {
+  align-self: stretch;
+}
+
+.tp-metrics-compare-head-peer .tp-panel-compare-peer-trigger {
+  width: 100%;
+  min-width: 0;
+}
+
+.tp-metrics-compare-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* Two-column metrics: inner edges 12px; outer corners 28px (explicit org/peer — not nth-child, grid has header cells) */
+.tp-metrics-compare-card--org {
+  border-top-left-radius: 28px;
+  border-bottom-left-radius: 28px;
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.tp-metrics-compare-card--peer {
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+  border-top-right-radius: 28px;
+  border-bottom-right-radius: 28px;
+}
+
 @media (max-width: 767px) {
   .tp-panel-compare {
     grid-template-columns: 1fr;
+  }
+
+  /* Keep metrics compare as two columns on mobile; org / peer labels truncate via .tp-metrics-compare-head */
+  .tp-metrics-compare-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 
@@ -776,23 +983,97 @@
   color: #ff3b30;
 }
 
-.tp-people-lede {
-  margin: -4px 0 12px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-secondary);
-}
-
 .tp-people-card {
   display: flex;
   flex-direction: row;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   padding: 14px 18px;
   border-radius: 28px;
   background: var(--surface-highlight);
   border: none;
   text-align: left;
+}
+
+.tp-people-card-main {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.tp-people-card-tools {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.tp-people-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.tp-people-icon-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, black 4%, transparent);
+  color: var(--text-secondary);
+}
+
+.tp-people-icon-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--semantic-accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.tp-people-icon-btn--disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+.tp-people-icon-btn--inactive {
+  pointer-events: none;
+  cursor: default;
+  opacity: 1;
+  color: var(--text-secondary);
+}
+
+.tp-people-icon-btn--inactive:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.tp-people-icon-skel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.tp-people-icon-skel-shape {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
 }
 
 /* Homepage: hero question + portfolio filter dropdown + org list */
@@ -827,17 +1108,43 @@
   align-items: flex-start;
   width: 100%;
   padding: 0 0 4px;
+  overflow: visible;
 }
 
 .tp-portfolio-home-toolbar-inner {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 10px 12px;
+  gap: 10px;
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  /* Single row: scroll horizontally when it doesn’t fit — no wrap, no clipping (overflow not hidden). */
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
-/* Mobile: single horizontal row + scroll; bleed to screen edges with padded scroll extents (no harsh clip). */
+/* Desktop: horizontal scroll for overflow; dropdowns use fixed portaled menus. */
+@media (min-width: 768px) {
+  .tp-portfolio-home-toolbar-inner {
+    justify-content: flex-start;
+    align-items: center;
+    padding-bottom: 4px;
+  }
+
+  .tp-portfolio-home-toolbar-inner > * {
+    flex-shrink: 0;
+  }
+
+  .tp-portfolio-home-toolbar-inner .tp-portfolio-bucket-select-wrap {
+    flex-wrap: nowrap;
+    max-width: none;
+  }
+}
+
+/* Mobile: same row + horizontal scroll; bleed padding matches hero. */
 @media (max-width: 767px) {
   .tp-portfolio-home-toolbar {
     margin-left: -16px;
@@ -848,36 +1155,9 @@
   }
 
   .tp-portfolio-home-toolbar-inner {
-    flex-wrap: nowrap;
-    gap: 10px;
     width: 100%;
     max-width: none;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-    scroll-behavior: smooth;
-    /* Align first/last chip with `.hp-dash` inset; extra end padding so the last chip never sits flush on the glass edge */
     padding: 2px 16px 10px;
-    scroll-padding-inline: 16px;
-    box-sizing: border-box;
-    /* Subtle scrollbar — indicates more filters without a harsh track */
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--text-tertiary) 35%, transparent) transparent;
-  }
-
-  .tp-portfolio-home-toolbar-inner::-webkit-scrollbar {
-    height: 5px;
-  }
-
-  .tp-portfolio-home-toolbar-inner::-webkit-scrollbar-track {
-    background: transparent;
-    margin-inline: 16px;
-  }
-
-  .tp-portfolio-home-toolbar-inner::-webkit-scrollbar-thumb {
-    border-radius: 99px;
-    background: color-mix(in srgb, var(--text-tertiary) 40%, transparent);
   }
 
   .tp-portfolio-home-toolbar-inner > * {
@@ -1092,11 +1372,21 @@
   flex-shrink: 0;
 }
 
+/* People → Overview → Similar → Metrics → Recommendations (sheet + full-page org detail) */
+.tp-org-detail-sections {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  min-width: 0;
+}
+
 .tp-org-detail-stack {
   align-self: stretch;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 24px;
 }
 
 .tp-org-detail-stack .tp-org-detail-toolbar {
@@ -1222,6 +1512,48 @@
   animation: tp-detail-share-copied-in 0.32s ease;
 }
 
+/* Desktop org rail — hit target for width drag (no overlay; main uses `--org-rail-width` padding). */
+.tp-org-rail-resize-handle {
+  user-select: none;
+}
+
+/* Org detail sheet toolbar — web.tsx job panel rhythm (share, then close). */
+.tp-org-panel-tool-row {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+.tp-org-panel-icon-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--hover-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.tp-org-panel-icon-btn:hover {
+  background: var(--hover-default);
+  color: var(--text-primary);
+}
+
+.tp-org-panel-icon-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--semantic-accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.tp-org-panel-icon-btn--success {
+  color: var(--text-primary);
+}
+
 .tp-people-text {
   display: flex;
   flex-direction: column;
@@ -1257,6 +1589,24 @@
   font-size: 12px;
   line-height: 1.3;
   color: var(--text-secondary);
+}
+
+/* Portfolio list card — job-card style meta row (location • board • reserve • net assets) */
+.tp-portfolio-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+
+.tp-portfolio-card-meta-sep {
+  opacity: 0.85;
+  user-select: none;
 }
 
 .tp-overview-sec {

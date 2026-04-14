@@ -12,30 +12,16 @@ import {
   useRef,
   useState,
 } from "react";
-import { buildPeerBenchmarks, staffPerMillion } from "@/lib/peer-benchmarks";
-import {
-  formatBenchmarkValue,
-  formatReserveCoverage,
-  reserveCoverageIsLow,
-  formatSignedPercent,
-  formatUsdFull,
-  screenScoreToneClasses,
-} from "@/lib/format-display";
-import type { OrgDetail, ScreenerRow } from "@/lib/types";
-import {
-  METRICS_COMPARE_MEDIAN,
-  MetricsComparePeerPicker,
-} from "./metrics-compare-peer-picker";
+import { staffPerMillion } from "@/lib/peer-benchmarks";
+import type { OrgDetail, OrgPerson990, ScreenerRow } from "@/lib/types";
+import { METRICS_COMPARE_MEDIAN } from "./metrics-compare-peer-picker";
 import { OrgLogoAvatar } from "./org-logo-avatar";
 import { websiteUrlToDomain } from "@/lib/website-url";
-import { OrgPeopleSection } from "./org-people-section";
-import { OrgMissionSummary } from "./org-mission-summary";
-import { OrgDetailMetaChips } from "./org-detail-meta-chips";
-import type { AssetsBandId } from "@/lib/assets-band";
-import type { RevenueBandId } from "@/lib/revenue-band";
-import type { ReserveBandId } from "@/lib/reserve-band";
-import type { BoardBandId } from "@/lib/board-band";
-import type { CountBandId } from "@/lib/portfolio-toolbar-bands";
+import type { AssetsBandSelection } from "@/lib/assets-band";
+import type { RevenueBandSelection } from "@/lib/revenue-band";
+import type { ReserveBandSelection } from "@/lib/reserve-band";
+import type { BoardBandSelection } from "@/lib/board-band";
+import type { CountBandSelection, StateAbbrevSelection } from "@/lib/portfolio-toolbar-bands";
 import {
   PortfolioBoardFilter,
   PortfolioEmployeesFilter,
@@ -45,21 +31,34 @@ import {
 import { PortfolioAssetsFilter } from "./portfolio-assets-filter";
 import { PortfolioRevenueFilter } from "./portfolio-revenue-filter";
 import { PortfolioReserveFilter } from "./portfolio-reserve-filter";
-import { RevenueHistoryChart } from "./revenue-history-chart";
+import { buildOrgRecommendationsPayload } from "@/lib/build-org-recommendations-payload";
+import type { OrgRecommendationsAiResponse } from "@/lib/org-recommendations-types";
+import { useDashboardShell } from "@/dashboard-ui/shell-context";
 import { buildLiveOrgDetail, EM_DASH } from "./tipping-point-live-detail";
 import { pickSimilarOrganizationRows } from "@/lib/similar-orgs";
-import { OrgDetailShareButton } from "./org-detail-share-button";
+import { getCachedOrgRecommendations, setCachedOrgRecommendations } from "./org-detail-fetch-cache";
+import { OrgDetailDesktopRail } from "./org-detail-desktop-rail";
+import { OrgDetailMainSections } from "./org-detail-main-sections";
+import { OrgDetailPanelToolbar } from "./org-detail-panel-toolbar";
+import { OrgDetailSheet } from "./org-detail-sheet";
+import {
+  PortfolioOrgCardMeta,
+  type PortfolioCardMetaFilterContext,
+} from "./portfolio-org-card-meta";
+import { rowsMatchDeepLink, sanitizeReturnChatParam } from "@/lib/teos-org-id";
+import { syncTeosOrgSnapshotForChat } from "@/lib/teos-org-chat-snapshot";
+import {
+  DEFAULT_PORTFOLIO_FILTERS,
+  readPersistedPortfolioFilters,
+  writePersistedPortfolioFilters,
+} from "@/lib/portfolio-filters-storage";
 
-const MOSAIC_GAP_PX = 12;
-/** Desktop: fixed size for each metric cell in the 2×2 block. */
-const METRIC_TILE_PX = 136;
-/** Outer side of the metrics square (two tiles + one gap per axis). */
-const MOSAIC_METRICS_GRID_SIDE_PX = METRIC_TILE_PX * 2 + MOSAIC_GAP_PX;
 const MOBILE_MQ = "(max-width: 767px)";
 const SIMILAR_ORG_MAX = 6;
 const PORTFOLIO_PAGE_SIZE = 20;
 const PORTFOLIO_HOME_SKELETON_ROWS = 10;
 const SHARE_FALLBACK_TITLE = "Tipping Point";
+const PORTFOLIO_EMPTY_LIST_MESSAGE = "Sorry! No organizations match this search.";
 
 function ein9FromRow(row: ScreenerRow): string | null {
   const d = row.ein.replace(/\D/g, "").slice(0, 9);
@@ -75,20 +74,6 @@ function PortfolioRowSkeleton() {
         <div className="hp-sk tp-portfolio-list-skeleton-line tp-portfolio-list-skeleton-line--sm" />
       </div>
     </div>
-  );
-}
-
-function ChevronLeftIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-      <path
-        d="M14 6L8 12L14 18"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
 
@@ -110,11 +95,18 @@ function TippingPointDashboardFallback({ embedded = false }: { embedded?: boolea
   );
 }
 
-function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }) {
+function TippingPointDashboardInner({
+  embedded = false,
+  railOnly = false,
+}: {
+  embedded?: boolean;
+  /** When true with `embedded`, hide the portfolio list — org rail/sheet only (e.g. chat route with `?org=`). */
+  railOnly?: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname() || "/";
   const searchParams = useSearchParams();
-
+  const { isMobile: shellIsMobile } = useDashboardShell();
   /** `home` = org list; `detail` = full org view (former single-page dashboard). */
   const [view, setView] = useState<"home" | "detail">("home");
   const [portfolioRows, setPortfolioRows] = useState<ScreenerRow[]>([]);
@@ -126,17 +118,15 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
   const [revenueByOrg, setRevenueByOrg] = useState<
     Record<string, { currentYearRevenue: number; priorYearRevenue: number }> | null
   >(null);
-  const [assetsBand, setAssetsBand] = useState<AssetsBandId>("all");
-  const [revenueBand, setRevenueBand] = useState<RevenueBandId>("all");
-  const [reserveBand, setReserveBand] = useState<ReserveBandId>("all");
-  const [employeeBand, setEmployeeBand] = useState<CountBandId>("all");
-  const [volunteerBand, setVolunteerBand] = useState<CountBandId>("all");
-  const [boardBand, setBoardBand] = useState<BoardBandId>("all");
-  const [stateFilter, setStateFilter] = useState<string>("all");
+  const [assetsBands, setAssetsBands] = useState<AssetsBandSelection>(DEFAULT_PORTFOLIO_FILTERS.assetsBands);
+  const [revenueBands, setRevenueBands] = useState<RevenueBandSelection>(DEFAULT_PORTFOLIO_FILTERS.revenueBands);
+  const [reserveBands, setReserveBands] = useState<ReserveBandSelection>(DEFAULT_PORTFOLIO_FILTERS.reserveBands);
+  const [employeeBands, setEmployeeBands] = useState<CountBandSelection>(DEFAULT_PORTFOLIO_FILTERS.employeeBands);
+  const [volunteerBands, setVolunteerBands] = useState<CountBandSelection>(DEFAULT_PORTFOLIO_FILTERS.volunteerBands);
+  const [boardBands, setBoardBands] = useState<BoardBandSelection>(DEFAULT_PORTFOLIO_FILTERS.boardBands);
+  const [stateAbbrevs, setStateAbbrevs] = useState<StateAbbrevSelection>(DEFAULT_PORTFOLIO_FILTERS.stateAbbrevs);
+  const [portfolioFiltersLoaded, setPortfolioFiltersLoaded] = useState(false);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
-  const mosaicRef = useRef<HTMLDivElement>(null);
-  /** Desktop: fixed metrics block side (px); main org card height matches in CSS. */
-  const [mosaicLayout, setMosaicLayout] = useState<{ metricsSide: number } | undefined>(undefined);
   const [metricsComparePeerId, setMetricsComparePeerId] = useState<string>(METRICS_COMPARE_MEDIAN);
   const metricsCompareInitRef = useRef(false);
   const portfolioPageRef = useRef(1);
@@ -144,6 +134,19 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
   const loadMoreInFlightRef = useRef(false);
   const portfolioRowsRef = useRef<ScreenerRow[]>([]);
   portfolioRowsRef.current = portfolioRows;
+  /** Part VII people keyed by 9-digit EIN — prefetched for every org on the loaded portfolio list. */
+  const [peopleByEin, setPeopleByEin] = useState<Record<string, OrgPerson990[]>>({});
+  const peopleByEinRef = useRef<Record<string, OrgPerson990[]>>({});
+  peopleByEinRef.current = peopleByEin;
+
+  /** After automatic retries, single-org fetch still failed (show Try again). */
+  const [deepLinkHydrateFailed, setDeepLinkHydrateFailed] = useState(false);
+  const [hydrateRetryNonce, setHydrateRetryNonce] = useState(0);
+
+  const [orgRecommendations, setOrgRecommendations] = useState<OrgRecommendationsAiResponse | null>(null);
+  const [orgRecommendationsLoading, setOrgRecommendationsLoading] = useState(false);
+  const [orgRecommendationsError, setOrgRecommendationsError] = useState<string | null>(null);
+  const orgRecommendationsAbortRef = useRef<AbortController | null>(null);
 
   const orgParamRaw = searchParams.get("org");
   const orgParamDecoded = useMemo(() => {
@@ -172,21 +175,82 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
     return s ? `${pathname}?${s}` : pathname;
   }, [pathname, searchParams]);
 
+  const returnChatPath = useMemo(
+    () => sanitizeReturnChatParam(searchParams.get("returnChat")),
+    [searchParams],
+  );
+
+  /** Back from org detail: return to chat session when opened from chat cards. */
+  const buildDetailBackHref = useCallback(() => {
+    if (returnChatPath) return returnChatPath;
+    return buildPortfolioHomeHref();
+  }, [returnChatPath, buildPortfolioHomeHref]);
+
+  const closeOrgPanel = useCallback(() => {
+    if (returnChatPath) {
+      router.push(returnChatPath);
+      return;
+    }
+    router.replace(buildPortfolioHomeHref());
+  }, [router, returnChatPath, buildPortfolioHomeHref]);
+
   useEffect(() => {
     portfolioPageRef.current = portfolioPage;
   }, [portfolioPage]);
 
+  useLayoutEffect(() => {
+    const f = readPersistedPortfolioFilters();
+    setAssetsBands(f.assetsBands);
+    setRevenueBands(f.revenueBands);
+    setReserveBands(f.reserveBands);
+    setEmployeeBands(f.employeeBands);
+    setVolunteerBands(f.volunteerBands);
+    setBoardBands(f.boardBands);
+    setStateAbbrevs(f.stateAbbrevs);
+    setPortfolioFiltersLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!portfolioFiltersLoaded) return;
+    writePersistedPortfolioFilters({
+      assetsBands,
+      revenueBands,
+      reserveBands,
+      employeeBands,
+      volunteerBands,
+      boardBands,
+      stateAbbrevs,
+    });
+  }, [
+    portfolioFiltersLoaded,
+    assetsBands,
+    revenueBands,
+    reserveBands,
+    employeeBands,
+    volunteerBands,
+    boardBands,
+    stateAbbrevs,
+  ]);
+
   const portfolioApiFilterQuery = useMemo(() => {
     const parts: string[] = [];
-    if (assetsBand !== "all") parts.push(`assetsBand=${encodeURIComponent(assetsBand)}`);
-    if (revenueBand !== "all") parts.push(`revenueBand=${encodeURIComponent(revenueBand)}`);
-    if (reserveBand !== "all") parts.push(`reserveBand=${encodeURIComponent(reserveBand)}`);
-    if (employeeBand !== "all") parts.push(`employeeBand=${encodeURIComponent(employeeBand)}`);
-    if (volunteerBand !== "all") parts.push(`volunteerBand=${encodeURIComponent(volunteerBand)}`);
-    if (boardBand !== "all") parts.push(`boardBand=${encodeURIComponent(boardBand)}`);
-    if (stateFilter !== "all") parts.push(`state=${encodeURIComponent(stateFilter)}`);
+    if (assetsBands.length > 0) parts.push(`assetsBands=${encodeURIComponent(assetsBands.join(","))}`);
+    if (revenueBands.length > 0) parts.push(`revenueBands=${encodeURIComponent(revenueBands.join(","))}`);
+    if (reserveBands.length > 0) parts.push(`reserveBands=${encodeURIComponent(reserveBands.join(","))}`);
+    if (employeeBands.length > 0) parts.push(`employeeBands=${encodeURIComponent(employeeBands.join(","))}`);
+    if (volunteerBands.length > 0) parts.push(`volunteerBands=${encodeURIComponent(volunteerBands.join(","))}`);
+    if (boardBands.length > 0) parts.push(`boardBands=${encodeURIComponent(boardBands.join(","))}`);
+    if (stateAbbrevs.length > 0) parts.push(`states=${encodeURIComponent(stateAbbrevs.join(","))}`);
     return parts.length ? `&${parts.join("&")}` : "";
-  }, [assetsBand, revenueBand, reserveBand, employeeBand, volunteerBand, boardBand, stateFilter]);
+  }, [
+    assetsBands,
+    revenueBands,
+    reserveBands,
+    employeeBands,
+    volunteerBands,
+    boardBands,
+    stateAbbrevs,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,6 +263,7 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
     portfolioPageRef.current = 1;
     setPortfolioRows([]);
     setRevenueByOrg(null);
+    setPeopleByEin({});
 
     fetch(`/api/portfolio-data?page=1&pageSize=${PORTFOLIO_PAGE_SIZE}${portfolioApiFilterQuery}`)
       .then(async (res) => {
@@ -226,7 +291,7 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
         } else {
           setPortfolioRows([]);
           setRevenueByOrg(null);
-          setPortfolioError("No organizations returned from the data API.");
+          setPortfolioError(null);
         }
       })
       .catch((e: unknown) => {
@@ -242,6 +307,43 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
       cancelled = true;
     };
   }, [portfolioApiFilterQuery]);
+
+  /** Prefetch Part VII people for every org currently in the portfolio list (detail view reuses cache). */
+  useEffect(() => {
+    if (!portfolioReady || portfolioRows.length === 0) return;
+    const eins = [
+      ...new Set(
+        portfolioRows.map((r) => ein9FromRow(r)).filter((e): e is string => e !== null),
+      ),
+    ];
+    const toFetch = eins.filter((ein) => !Object.hasOwn(peopleByEinRef.current, ein));
+    if (toFetch.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const results = await Promise.all(
+        toFetch.map(async (ein) => {
+          try {
+            const res = await fetch(`/api/org-people?ein=${encodeURIComponent(ein)}`);
+            const body = (await res.json()) as { people?: OrgPerson990[] };
+            return [ein, Array.isArray(body.people) ? body.people : []] as const;
+          } catch {
+            return [ein, []] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setPeopleByEin((prev) => {
+        const next = { ...prev };
+        for (const [ein, list] of results) {
+          if (!Object.hasOwn(next, ein)) next[ein] = [...list];
+        }
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [portfolioReady, portfolioRows]);
 
   useEffect(() => {
     if (!portfolioReady || !portfolioHasMore || loadingMore) return;
@@ -299,10 +401,11 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
 
   useEffect(() => {
     if (view === "detail" && portfolioReady && portfolioRows.length === 0) {
+      if (orgParamDecoded) return;
       router.replace(buildPortfolioHomeHref());
       startTransition(() => setView("home"));
     }
-  }, [view, portfolioReady, portfolioRows.length, router, buildPortfolioHomeHref]);
+  }, [view, portfolioReady, portfolioRows.length, router, buildPortfolioHomeHref, orgParamDecoded]);
 
   /** Sync `view` / selection from `?org=` (including browser back/forward). */
   useEffect(() => {
@@ -323,14 +426,14 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
 
     startTransition(() => {
       setSelectedOrgId(orgParamDecoded);
-      setView("detail");
+      setView(embedded ? "home" : "detail");
     });
-  }, [portfolioReady, orgParamDecoded, portfolioRows]);
+  }, [portfolioReady, orgParamDecoded, portfolioRows, embedded]);
 
   /** Deep link: load more portfolio pages until `org` appears (or none left). */
   useEffect(() => {
     if (!portfolioReady || !orgParamDecoded) return;
-    if (portfolioRows.some((r) => r.id === orgParamDecoded)) return;
+    if (portfolioRows.some((r) => rowsMatchDeepLink(r, orgParamDecoded))) return;
     if (!portfolioHasMore || loadingMore) return;
     if (loadMoreInFlightRef.current) return;
 
@@ -372,31 +475,88 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
       });
   }, [portfolioReady, orgParamDecoded, portfolioRows, portfolioHasMore, loadingMore, portfolioApiFilterQuery]);
 
-  /** Unknown `org` after loading all pages — clear the param and return home. */
   useEffect(() => {
-    if (!portfolioReady || !orgParamDecoded) return;
-    if (portfolioRows.some((r) => r.id === orgParamDecoded)) return;
-    if (portfolioHasMore || loadingMore) return;
+    setDeepLinkHydrateFailed(false);
+  }, [orgParamDecoded]);
 
-    router.replace(buildPortfolioHomeHref());
-    startTransition(() => {
-      setView("home");
-      if (portfolioRows.length > 0) {
-        setSelectedOrgId(portfolioRows[0]!.id);
+  /**
+   * Deep link from chat/search: org may never appear in the random portfolio.
+   * Fetch the single TEOS row via `/api/portfolio-org` with automatic retries.
+   */
+  useEffect(() => {
+    if (!orgParamDecoded || !portfolioReady) return;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let attempt = 0;
+    let cancelled = false;
+
+    const clearTimers = () => {
+      for (const t of timers) clearTimeout(t);
+      timers.length = 0;
+    };
+
+    const schedule = (fn: () => void, ms: number) => {
+      const t = setTimeout(fn, ms);
+      timers.push(t);
+    };
+
+    const run = async () => {
+      if (cancelled) return;
+      if (portfolioRowsRef.current.some((r) => rowsMatchDeepLink(r, orgParamDecoded))) {
+        setDeepLinkHydrateFailed(false);
+        return;
       }
-    });
-  }, [
-    portfolioReady,
-    orgParamDecoded,
-    portfolioRows,
-    portfolioHasMore,
-    loadingMore,
-    router,
-    buildPortfolioHomeHref,
-  ]);
+      try {
+        const res = await fetch(
+          `/api/portfolio-org?orgId=${encodeURIComponent(orgParamDecoded)}`,
+          { cache: "no-store" },
+        );
+        const data = (await res.json().catch(() => ({}))) as {
+          screener?: ScreenerRow[];
+          revenueByOrg?: Record<string, { currentYearRevenue: number; priorYearRevenue: number }>;
+        };
+        if (!res.ok || !data.screener?.[0]) throw new Error("missing");
+        const row = data.screener[0];
+        if (cancelled) return;
+        setPortfolioRows((prev) => {
+          if (prev.some((p) => rowsMatchDeepLink(p, orgParamDecoded))) return prev;
+          if (prev.some((p) => p.id === row.id)) return prev;
+          return [row, ...prev];
+        });
+        setRevenueByOrg((prev) => ({ ...(prev ?? {}), ...(data.revenueByOrg ?? {}) }));
+        setDeepLinkHydrateFailed(false);
+        if (row.id !== orgParamDecoded) {
+          const q = new URLSearchParams(searchParams.toString());
+          q.set("org", row.id);
+          const s = q.toString();
+          router.replace(s ? `${pathname}?${s}` : pathname);
+        }
+      } catch {
+        if (cancelled) return;
+        attempt += 1;
+        if (attempt >= 28) {
+          setDeepLinkHydrateFailed(true);
+          return;
+        }
+        schedule(() => void run(), Math.min(8000, 900 + attempt * 350));
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+      clearTimers();
+    };
+  }, [orgParamDecoded, portfolioReady, pathname, router, searchParams, hydrateRetryNonce]);
 
   const selectedRow = useMemo((): ScreenerRow | undefined => {
     if (portfolioRows.length === 0) return undefined;
+    const fromOrgUrl = Boolean(orgParamDecoded) && (embedded || view === "detail");
+    if (fromOrgUrl && orgParamDecoded) {
+      const byLink = portfolioRows.find((r) => rowsMatchDeepLink(r, orgParamDecoded));
+      if (byLink) return byLink;
+    }
     if (view === "detail" && selectedOrgId) {
       return portfolioRows.find((r) => r.id === selectedOrgId);
     }
@@ -404,19 +564,177 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
       return portfolioRows.find((r) => r.id === selectedOrgId) ?? portfolioRows[0];
     }
     return portfolioRows[0];
-  }, [view, selectedOrgId, portfolioRows]);
+  }, [view, selectedOrgId, portfolioRows, orgParamDecoded, embedded]);
+
+  /** Lets the chat composer name the org the user is viewing (`?org=`) without re-fetching. */
+  useEffect(() => {
+    if (!orgParamDecoded) {
+      syncTeosOrgSnapshotForChat(undefined);
+      return;
+    }
+    if (!selectedRow) return;
+    syncTeosOrgSnapshotForChat({
+      orgId: selectedRow.id,
+      name: selectedRow.organizationName,
+      city: selectedRow.city,
+      state: selectedRow.state,
+      ein: selectedRow.ein,
+      websiteDomain: websiteUrlToDomain(selectedRow.websiteUrl) ?? "",
+      logoDomain: selectedRow.logoDomain,
+      logoImageUrl: selectedRow.logoImageUrl,
+    });
+  }, [orgParamDecoded, selectedRow]);
 
   const detail: OrgDetail | undefined = useMemo(() => {
     if (!selectedRow) return undefined;
     return buildLiveOrgDetail(selectedRow, portfolioRows, revenueByOrg);
   }, [selectedRow, portfolioRows, revenueByOrg]);
 
-  const benchmarkRows = useMemo(() => detail?.peerBenchmarks.slice(0, 4) ?? [], [detail]);
-
   const similarOrgRows = useMemo(() => {
     if (!selectedRow) return [];
     return pickSimilarOrganizationRows(portfolioRows, selectedRow, SIMILAR_ORG_MAX);
   }, [portfolioRows, selectedRow]);
+
+  /** Portfolio list order — prev/next org in mosaic (web.tsx-style horizontal nav). */
+  const orgDeckIndex = useMemo(() => {
+    if (!selectedRow) return -1;
+    return portfolioRows.findIndex((r) => r.id === selectedRow.id);
+  }, [portfolioRows, selectedRow]);
+
+  const goPrevOrg = useCallback(() => {
+    if (orgDeckIndex <= 0) return;
+    const row = portfolioRows[orgDeckIndex - 1];
+    if (!row) return;
+    startTransition(() => {
+      router.replace(buildOrgHref(row.id));
+    });
+  }, [orgDeckIndex, portfolioRows, router, buildOrgHref]);
+
+  const goNextOrg = useCallback(() => {
+    if (orgDeckIndex < 0 || orgDeckIndex >= portfolioRows.length - 1) return;
+    const row = portfolioRows[orgDeckIndex + 1];
+    if (!row) return;
+    startTransition(() => {
+      router.replace(buildOrgHref(row.id));
+    });
+  }, [orgDeckIndex, portfolioRows, router, buildOrgHref]);
+
+  useEffect(() => {
+    if (!orgParamDecoded || orgDeckIndex < 0) return;
+    if (!embedded && view !== "detail") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input, textarea, select, [contenteditable=true]")) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      if (e.key === "ArrowLeft") goPrevOrg();
+      else goNextOrg();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [orgParamDecoded, orgDeckIndex, embedded, view, goPrevOrg, goNextOrg]);
+
+  const selectedEin9 = useMemo(
+    () => (selectedRow ? ein9FromRow(selectedRow) : null),
+    [selectedRow],
+  );
+
+  const detailPeoplePrefetched = useMemo((): OrgPerson990[] | undefined => {
+    if (selectedEin9 == null) return undefined;
+    return Object.hasOwn(peopleByEin, selectedEin9) ? peopleByEin[selectedEin9] : undefined;
+  }, [selectedEin9, peopleByEin]);
+
+  const orgDetailRouteActive =
+    (embedded && Boolean(orgParamDecoded)) || (!embedded && view === "detail");
+
+  /** OpenAI: scenario / memo / evidence from aggregated org + peer + people context. */
+  useEffect(() => {
+    if (!orgDetailRouteActive || !selectedRow || !detail) {
+      orgRecommendationsAbortRef.current?.abort();
+      setOrgRecommendations(null);
+      setOrgRecommendationsError(null);
+      setOrgRecommendationsLoading(false);
+      return;
+    }
+
+    const cachedRec = getCachedOrgRecommendations(selectedRow.id);
+    if (cachedRec) {
+      setOrgRecommendations(cachedRec);
+      setOrgRecommendationsError(null);
+      setOrgRecommendationsLoading(false);
+      return;
+    }
+
+    if (selectedEin9 != null && !Object.hasOwn(peopleByEin, selectedEin9)) {
+      setOrgRecommendations(null);
+      setOrgRecommendationsError(null);
+      setOrgRecommendationsLoading(true);
+      return;
+    }
+
+    const people: OrgPerson990[] =
+      selectedEin9 != null && Object.hasOwn(peopleByEin, selectedEin9)
+        ? peopleByEin[selectedEin9]!
+        : [];
+
+    const ac = new AbortController();
+    orgRecommendationsAbortRef.current?.abort();
+    orgRecommendationsAbortRef.current = ac;
+
+    setOrgRecommendationsLoading(true);
+    setOrgRecommendationsError(null);
+    setOrgRecommendations(null);
+
+    const payload = buildOrgRecommendationsPayload(
+      selectedRow,
+      detail,
+      portfolioRows,
+      similarOrgRows,
+      people,
+    );
+
+    fetch("/api/org-recommendations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: ac.signal,
+      cache: "no-store",
+    })
+      .then(async (res) => {
+        const body = (await res.json().catch(() => ({}))) as OrgRecommendationsAiResponse & { error?: string };
+        if (!res.ok) {
+          throw new Error(typeof body.error === "string" ? body.error : `HTTP ${res.status}`);
+        }
+        return body as OrgRecommendationsAiResponse;
+      })
+      .then((data) => {
+        if (!data.scenario || !data.memo?.bullets?.length || !data.evidence) {
+          throw new Error("Incomplete recommendations response");
+        }
+        setCachedOrgRecommendations(selectedRow.id, data);
+        setOrgRecommendations(data);
+        setOrgRecommendationsError(null);
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setOrgRecommendations(null);
+        setOrgRecommendationsError(e instanceof Error ? e.message : "Could not load recommendations.");
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setOrgRecommendationsLoading(false);
+      });
+
+    return () => ac.abort();
+  }, [
+    orgDetailRouteActive,
+    selectedRow,
+    detail,
+    portfolioRows,
+    similarOrgRows,
+    selectedEin9,
+    peopleByEin,
+  ]);
 
   useEffect(() => {
     if (!selectedRow) return;
@@ -453,38 +771,91 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
     return portfolioRows.find((r) => r.id === metricsComparePeerId) ?? null;
   }, [metricsComparePeerId, portfolioRows]);
 
-  function panelPeerBenchmarkValue(label: string, peerMedianFallback: number): number {
-    if (!panelComparePeerRow) return peerMedianFallback;
-    if (label === "Reserve months") return panelComparePeerRow.reserveMonths;
-    if (label === "Revenue growth %") return panelComparePeerRow.growthRate;
-    if (label === "Staff per $1M") return staffPerMillion(panelComparePeerRow);
-    return peerMedianFallback;
-  }
+  const panelPeerBenchmarkValue = useCallback(
+    (label: string, peerMedianFallback: number | null): number | null => {
+      if (!panelComparePeerRow) return peerMedianFallback;
+      if (label === "Reserve months") return panelComparePeerRow.reserveMonths;
+      if (label === "Revenue growth %") return panelComparePeerRow.growthRate;
+      if (label === "Staff per $1M") return staffPerMillion(panelComparePeerRow);
+      if (label === "Program expenses") return panelComparePeerRow.programServiceExpensesUsd ?? null;
+      if (label === "Admin expenses") return panelComparePeerRow.managementGeneralExpensesUsd ?? null;
+      if (label === "Fundraising expenses") return panelComparePeerRow.fundraisingExpensesUsd ?? null;
+      return peerMedianFallback;
+    },
+    [panelComparePeerRow],
+  );
 
-  useLayoutEffect(() => {
-    if (view !== "detail") {
-      setMosaicLayout(undefined);
-      return;
-    }
-    const mq = window.matchMedia(MOBILE_MQ);
+  const visibleBenchmarkRows = useMemo(() => {
+    const rows = detail?.peerBenchmarks ?? [];
+    return rows.filter((row) => {
+      const peerV = panelPeerBenchmarkValue(row.label, row.peerMedian);
+      return !(row.orgValue === null && peerV === null);
+    });
+  }, [detail, panelPeerBenchmarkValue]);
 
-    const sync = () => {
-      if (mq.matches) {
-        setMosaicLayout(undefined);
-        return;
-      }
-      setMosaicLayout({ metricsSide: MOSAIC_METRICS_GRID_SIDE_PX });
-    };
+  const portfolioCardMetaFilterContext = useMemo((): PortfolioCardMetaFilterContext => {
+    return { stateAbbrevs, volunteerBands, employeeBands };
+  }, [stateAbbrevs, volunteerBands, employeeBands]);
 
-    sync();
-    mq.addEventListener("change", sync);
-    return () => {
-      mq.removeEventListener("change", sync);
-    };
-  }, [view, selectedOrgId]);
+  const orgDetailToolbar = (
+    <OrgDetailPanelToolbar
+      shareTitle={selectedRow?.organizationName ?? SHARE_FALLBACK_TITLE}
+      onClose={closeOrgPanel}
+    />
+  );
+
+  const orgDetailInner =
+    orgParamDecoded && (!selectedRow || !detail) ? (
+      <div className="tp-org-detail-stack" style={{ paddingTop: 4 }}>
+        <p className="tp-body tp-portfolio-home-empty">
+          {deepLinkHydrateFailed
+            ? "Still having trouble loading this organization."
+            : portfolioHasMore || loadingMore || (orgParamDecoded && !selectedRow)
+              ? "Loading organization…"
+              : "Organization not found."}
+        </p>
+        {deepLinkHydrateFailed ? (
+          <p className="tp-body" style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="tp-panel-compare-peer-trigger"
+              style={{ cursor: "pointer" }}
+              onClick={() => {
+                setDeepLinkHydrateFailed(false);
+                setHydrateRetryNonce((n) => n + 1);
+              }}
+            >
+              Try again
+            </button>
+          </p>
+        ) : null}
+      </div>
+    ) : selectedRow && detail ? (
+      <OrgDetailMainSections
+        selectedRow={selectedRow}
+        detail={detail}
+        detailPeoplePrefetched={detailPeoplePrefetched}
+        similarOrgRows={similarOrgRows}
+        buildOrgHref={buildOrgHref}
+        portfolioCardMetaFilterContext={portfolioCardMetaFilterContext}
+        metricsCompareOptions={metricsCompareOptions}
+        metricsComparePeerId={metricsComparePeerId}
+        onMetricsComparePeerId={setMetricsComparePeerId}
+        visibleBenchmarkRows={visibleBenchmarkRows}
+        panelPeerBenchmarkValue={panelPeerBenchmarkValue}
+        panelComparePeerRow={panelComparePeerRow}
+        orgRecommendations={orgRecommendations}
+        orgRecommendationsLoading={orgRecommendationsLoading}
+        orgRecommendationsError={orgRecommendationsError}
+        selectedEin9={selectedEin9}
+        peopleByEin={peopleByEin}
+      />
+    ) : null;
+
+  const showPortfolioList = (embedded && !railOnly) || (!embedded && view === "home");
 
   return (
-    <div className="tp-dashboard-shell">
+    <div className={`tp-dashboard-shell${railOnly ? " tp-dashboard-shell--rail-only" : ""}`}>
       {!embedded ? (
         <header className="tp-dash-top">
           <div className="tp-dash-brand">
@@ -495,20 +866,20 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
       ) : null}
 
       <div className="hp-dash" data-layer="tipping-point-dashboard">
-        {view === "home" ? (
+        {showPortfolioList ? (
           <section className="hp-sec" aria-label="Organizations">
             <div className="tp-portfolio-home-hero">
               <h2 className="tp-portfolio-home-question">What nonprofit can we help?</h2>
             </div>
             <div className="tp-portfolio-home-toolbar">
               <div className="tp-portfolio-home-toolbar-inner">
-                <PortfolioReserveFilter value={reserveBand} onChange={setReserveBand} />
-                <PortfolioAssetsFilter value={assetsBand} onChange={setAssetsBand} />
-                <PortfolioRevenueFilter value={revenueBand} onChange={setRevenueBand} />
-                <PortfolioBoardFilter value={boardBand} onChange={setBoardBand} />
-                <PortfolioEmployeesFilter value={employeeBand} onChange={setEmployeeBand} />
-                <PortfolioVolunteerFilter value={volunteerBand} onChange={setVolunteerBand} />
-                <PortfolioStateFilter value={stateFilter} onChange={setStateFilter} />
+                <PortfolioReserveFilter value={reserveBands} onChange={setReserveBands} />
+                <PortfolioAssetsFilter value={assetsBands} onChange={setAssetsBands} />
+                <PortfolioRevenueFilter value={revenueBands} onChange={setRevenueBands} />
+                <PortfolioEmployeesFilter value={employeeBands} onChange={setEmployeeBands} />
+                <PortfolioVolunteerFilter value={volunteerBands} onChange={setVolunteerBands} />
+                <PortfolioBoardFilter value={boardBands} onChange={setBoardBands} />
+                <PortfolioStateFilter value={stateAbbrevs} onChange={setStateAbbrevs} />
               </div>
             </div>
             <div className="tp-portfolio-home-list" aria-busy={!portfolioReady}>
@@ -521,7 +892,9 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
                 </>
               ) : portfolioRows.length === 0 ? (
                 <p className="tp-body tp-portfolio-home-empty">
-                  {portfolioError ?? EM_DASH}
+                  {!portfolioError || portfolioError === "No portfolio data"
+                    ? PORTFOLIO_EMPTY_LIST_MESSAGE
+                    : portfolioError}
                 </p>
               ) : (
                 <>
@@ -540,9 +913,7 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
                       />
                       <div className="tp-people-text tp-portfolio-list-text">
                         <p className="tp-people-name">{row.organizationName}</p>
-                        <p className="tp-people-role">
-                          {row.city}, {row.state}
-                        </p>
+                        <PortfolioOrgCardMeta row={row} filterContext={portfolioCardMetaFilterContext} />
                       </div>
                     </Link>
                   ))}
@@ -560,269 +931,82 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
               )}
             </div>
           </section>
-        ) : view === "detail" && orgParamDecoded && (!selectedRow || !detail) ? (
+        ) : null}
+
+        {embedded && orgParamDecoded ? (
+          shellIsMobile ? (
+            <OrgDetailSheet
+              open={Boolean(orgParamDecoded)}
+              onClose={closeOrgPanel}
+              onSwipePrev={goPrevOrg}
+              onSwipeNext={goNextOrg}
+              swipePrevEnabled={orgDeckIndex > 0}
+              swipeNextEnabled={orgDeckIndex >= 0 && orgDeckIndex < portfolioRows.length - 1}
+              toolbar={orgDetailToolbar}
+            >
+              {orgDetailInner}
+            </OrgDetailSheet>
+          ) : (
+            <OrgDetailDesktopRail open={Boolean(orgParamDecoded)} onClose={closeOrgPanel} toolbar={orgDetailToolbar}>
+              {orgDetailInner}
+            </OrgDetailDesktopRail>
+          )
+        ) : null}
+
+        {!embedded && view === "detail" && orgParamDecoded && (!selectedRow || !detail) ? (
           <section className="hp-sec" aria-label="Organization">
             <div className="tp-org-detail-stack">
-              <div className="tp-org-detail-toolbar">
-                <Link
-                  href={buildPortfolioHomeHref()}
-                  scroll={false}
-                  className="tp-back-button"
-                  aria-label="Back to portfolio"
-                >
-                  <ChevronLeftIcon />
-                  Back
-                </Link>
-                <OrgDetailShareButton shareTitle={SHARE_FALLBACK_TITLE} />
+              <div className="tp-org-detail-toolbar tp-org-detail-toolbar--page">
+                <OrgDetailPanelToolbar shareTitle={SHARE_FALLBACK_TITLE} onClose={closeOrgPanel} />
               </div>
               <p className="tp-body tp-portfolio-home-empty">
-                {portfolioHasMore || loadingMore
-                  ? "Loading organization…"
-                  : "Organization not found in portfolio."}
+                {deepLinkHydrateFailed
+                  ? "Still having trouble loading this organization."
+                  : portfolioHasMore || loadingMore || (orgParamDecoded && !selectedRow)
+                    ? "Loading organization…"
+                    : "Organization not found."}
               </p>
+              {deepLinkHydrateFailed ? (
+                <p className="tp-body" style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    className="tp-panel-compare-peer-trigger"
+                    style={{ cursor: "pointer" }}
+                    onClick={() => {
+                      setDeepLinkHydrateFailed(false);
+                      setHydrateRetryNonce((n) => n + 1);
+                    }}
+                  >
+                    Try again
+                  </button>
+                </p>
+              ) : null}
             </div>
           </section>
-        ) : selectedRow && detail ? (
+        ) : !embedded && selectedRow && detail && view === "detail" ? (
           <>
-            <div className="tp-org-detail-stack">
-              <div className="tp-org-detail-toolbar">
-                <Link
-                  href={buildPortfolioHomeHref()}
-                  scroll={false}
-                  className="tp-back-button"
-                  aria-label="Back to portfolio"
-                >
-                  <ChevronLeftIcon />
-                  Back
-                </Link>
-                <OrgDetailShareButton shareTitle={selectedRow.organizationName} />
-              </div>
-
-              <section className="hp-sec tp-overview-sec" aria-label="Organization overview">
-              <div className="hp-mosaic" ref={mosaicRef}>
-            <div className="tp-card tp-card-big hp-mosaic-tall tp-mosaic-org-card">
-              <div className="tp-mosaic-org-inner tp-mosaic-org-inner--detail">
-                <div className="tp-mosaic-org-head">
-                  <div className="tp-mosaic-org-head-main">
-                    <OrgLogoAvatar
-                      organizationName={selectedRow.organizationName}
-                      websiteDomain={websiteUrlToDomain(selectedRow.websiteUrl)}
-                      cachedLogoDomain={selectedRow.logoDomain}
-                      logoImageUrl={selectedRow.logoImageUrl}
-                    />
-                    <div className="tp-mosaic-org-titles">
-                      <p className="tp-title tp-mosaic-org-title">{selectedRow.organizationName}</p>
-                      <p className="tp-body tp-mosaic-org-location">
-                        {selectedRow.city}, {selectedRow.state}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="tp-mosaic-org-mission">
-                  <OrgMissionSummary ein={selectedRow.ein} initialSummary={detail.summary} />
-                </div>
-                <p className="tp-body tp-org-ein tp-mosaic-org-ein">EIN {selectedRow.ein}</p>
-              </div>
+            <div className="tp-org-detail-toolbar tp-org-detail-toolbar--page">
+              <OrgDetailPanelToolbar shareTitle={selectedRow.organizationName} onClose={closeOrgPanel} />
             </div>
-
-            <div
-              className="tp-mosaic-metrics-grid"
-              style={
-                mosaicLayout !== undefined
-                  ? { width: mosaicLayout.metricsSide, height: mosaicLayout.metricsSide }
-                  : undefined
-              }
-            >
-              <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
-                <p className="tp-kicker">Screener score</p>
-                <p className={`tp-metric-value ${screenScoreToneClasses(selectedRow.screenScore)}`}>
-                  {selectedRow.screenScore}
-                </p>
-              </div>
-              <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
-                <p className="tp-kicker">YoY revenue</p>
-                <p className="tp-metric-value">{formatSignedPercent(selectedRow.growthRate)}</p>
-              </div>
-              <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
-                <p className="tp-kicker">Reserve coverage</p>
-                <p
-                  className={`tp-metric-value${reserveCoverageIsLow(selectedRow.reserveMonths) ? " tp-screen-score--critical" : ""}`}
-                  style={{ fontSize: 18 }}
-                >
-                  {formatReserveCoverage(selectedRow.reserveMonths)}
-                </p>
-              </div>
-              <div className="tp-card tp-card-stacked tp-mosaic-metric-tile">
-                <p className="tp-kicker">Revenue</p>
-                <p className="tp-metric-value" style={{ fontSize: 18 }}>
-                  {formatUsdFull(selectedRow.revenue)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-              <div className="tp-revenue-wide">
-                <RevenueHistoryChart ein={selectedRow.ein} />
-                <OrgDetailMetaChips
-                  ein={selectedRow.ein}
-                  initialWebsiteUrl={selectedRow.websiteUrl}
-                  foundedYear={selectedRow.foundedYear}
-                  employeeCount={selectedRow.employeeCount}
-                  volunteerCount={selectedRow.volunteerCount}
-                />
-              </div>
-            </section>
-            </div>
-
-                <OrgPeopleSection ein={selectedRow.ein} />
-
-                <section className="hp-sec" aria-label="Similar organizations">
-              <h2 className="hp-sec-title">Similar organizations</h2>
-              <div className="tp-portfolio-home-list">
-                {similarOrgRows.length === 0 ? (
-                  <p className="tp-body tp-portfolio-home-empty">
-                    No other organizations are in your loaded list yet. Go back to the portfolio and load more
-                    rows to see peers ranked by similar reserve coverage, then similar revenue.
-                  </p>
-                ) : (
-                  similarOrgRows.map((row) => (
-                    <Link
-                      key={row.id}
-                      href={buildOrgHref(row.id)}
-                      scroll={false}
-                      className="tp-portfolio-list-card"
-                    >
-                      <OrgLogoAvatar
-                        organizationName={row.organizationName}
-                        websiteDomain={websiteUrlToDomain(row.websiteUrl)}
-                        cachedLogoDomain={row.logoDomain}
-                        logoImageUrl={row.logoImageUrl}
-                      />
-                      <div className="tp-people-text tp-portfolio-list-text">
-                        <p className="tp-people-name">{row.organizationName}</p>
-                        <p className="tp-people-role">
-                          {row.city}, {row.state}
-                        </p>
-                      </div>
-                      <span
-                        className={`tp-metric-value tp-portfolio-list-metric ${screenScoreToneClasses(row.screenScore)}`}
-                        aria-label={`Screener score ${row.screenScore}`}
-                      >
-                        {row.screenScore}
-                      </span>
-                    </Link>
-                  ))
-                )}
-              </div>
-            </section>
-
-                <section className="hp-sec" aria-label="Metrics">
-              <h2 className="hp-sec-title">Metrics</h2>
-              <div className="tp-panel-compare">
-            <div
-              className="tp-panel tp-panel-compare-col"
-              aria-label={`${selectedRow.organizationName} benchmarks`}
-            >
-              <p className="tp-panel-compare-heading">{selectedRow.organizationName}</p>
-              {benchmarkRows.map((row) => (
-                <div key={`org-${row.label}`} className="tp-panel-compare-row">
-                  <p className="tp-kicker">{row.label}</p>
-                  <p
-                    className={`tp-body tp-panel-compare-value${
-                      row.label === "Reserve months" && reserveCoverageIsLow(row.orgValue)
-                        ? " tp-reserve-coverage-low"
-                        : ""
-                    }`}
-                  >
-                    {formatBenchmarkValue(row.label, row.orgValue)}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <div
-              className="tp-panel tp-panel-compare-col"
-              aria-label={
-                metricsComparePeerId === METRICS_COMPARE_MEDIAN
-                  ? "Portfolio median benchmarks"
-                  : `${panelComparePeerRow?.organizationName ?? "Peer"} benchmarks`
-              }
-            >
-              <MetricsComparePeerPicker
-                options={metricsCompareOptions}
-                value={metricsComparePeerId}
-                onChange={setMetricsComparePeerId}
-              />
-              {benchmarkRows.map((row) => {
-                const peerMetric = panelPeerBenchmarkValue(row.label, row.peerMedian);
-                return (
-                  <div key={`peer-${row.label}`} className="tp-panel-compare-row">
-                    <p className="tp-kicker">{row.label}</p>
-                    <p
-                      className={`tp-body tp-panel-compare-value${
-                        row.label === "Reserve months" && reserveCoverageIsLow(peerMetric)
-                          ? " tp-reserve-coverage-low"
-                          : ""
-                      }`}
-                    >
-                      {formatBenchmarkValue(row.label, peerMetric)}
-                    </p>
-                  </div>
-                );
-              })}
-              </div>
-              </div>
-            </section>
-
-                <section className="hp-sec" aria-label="Recommendations">
-              <h2 className="hp-sec-title">Recommendations</h2>
-              <div className="hp-stack hp-highlights">
-                <div className="tp-card tp-card-big hp-banner">
-                  <p className="tp-kicker">Scenario modeling</p>
-                  <p className="tp-title" style={{ fontSize: 17 }}>
-                    {EM_DASH}
-                  </p>
-                  <p className="tp-body">
-                    Not generated from ProPublica data. Add your own assumptions outside this dashboard if you need a
-                    forward scenario.
-                  </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: "auto" }}>
-                    <div>
-                      <p className="tp-kicker">Proj. reserve</p>
-                      <p className="tp-metric-value" style={{ fontSize: 18 }}>
-                        {EM_DASH}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="tp-kicker">Proj. growth</p>
-                      <p className="tp-metric-value" style={{ fontSize: 18 }}>
-                        {EM_DASH}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="tp-kicker">Risk shift</p>
-                      <p className="tp-metric-value" style={{ fontSize: 16 }}>
-                        {EM_DASH}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="tp-card tp-card-big hp-banner">
-                  <p className="tp-kicker">Memo / talking points</p>
-                  <p className="tp-title" style={{ fontSize: 17 }}>
-                    {EM_DASH}
-                  </p>
-                  <p className="tp-body">{EM_DASH}</p>
-                </div>
-
-                <div className="tp-card tp-card-big hp-banner">
-                  <p className="tp-kicker">Evidence beyond 990 extracts</p>
-                  <p className="tp-body" style={{ color: "var(--text-primary)" }}>
-                    {EM_DASH}
-                  </p>
-                </div>
-              </div>
-            </section>
+            <OrgDetailMainSections
+              selectedRow={selectedRow}
+              detail={detail}
+              detailPeoplePrefetched={detailPeoplePrefetched}
+              similarOrgRows={similarOrgRows}
+              buildOrgHref={buildOrgHref}
+              portfolioCardMetaFilterContext={portfolioCardMetaFilterContext}
+              metricsCompareOptions={metricsCompareOptions}
+              metricsComparePeerId={metricsComparePeerId}
+              onMetricsComparePeerId={setMetricsComparePeerId}
+              visibleBenchmarkRows={visibleBenchmarkRows}
+              panelPeerBenchmarkValue={panelPeerBenchmarkValue}
+              panelComparePeerRow={panelComparePeerRow}
+              orgRecommendations={orgRecommendations}
+              orgRecommendationsLoading={orgRecommendationsLoading}
+              orgRecommendationsError={orgRecommendationsError}
+              selectedEin9={selectedEin9}
+              peopleByEin={peopleByEin}
+            />
           </>
         ) : null}
       </div>
@@ -830,7 +1014,7 @@ function TippingPointDashboardInner({ embedded = false }: { embedded?: boolean }
   );
 }
 
-export function TippingPointDashboard(props: { embedded?: boolean }) {
+export function TippingPointDashboard(props: { embedded?: boolean; railOnly?: boolean }) {
   return (
     <Suspense fallback={<TippingPointDashboardFallback embedded={props.embedded} />}>
       <TippingPointDashboardInner {...props} />

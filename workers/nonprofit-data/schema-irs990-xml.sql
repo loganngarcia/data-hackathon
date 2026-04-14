@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS irs990_xml_returns (
   voting_members_governing_cnt INTEGER,
   voting_members_independent_cnt INTEGER,
   total_program_service_expenses_amt REAL,
+  cy_total_management_and_general_expenses_amt REAL,
   cy_total_fundraising_expense_amt REAL,
   cy_contributions_grants_amt REAL,
   cy_program_service_revenue_amt REAL,

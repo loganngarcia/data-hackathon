@@ -4,6 +4,10 @@ import { createPortal } from "react-dom";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PortfolioBucket, PortfolioBucketCounts } from "@/lib/portfolio-buckets";
 import type { ScreenerRow } from "@/lib/types";
+import {
+  clampPortfolioFloatingMenuRect,
+  estimatePortfolioMenuHeight,
+} from "./portfolio-floating-menu-rect";
 
 type Props = {
   rows: ScreenerRow[];
@@ -93,12 +97,10 @@ export function PortfolioHomeFilter(props: Props) {
     const el = chipRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setFixedPos({
-      top: r.bottom + 4,
-      left: r.left,
-      width: Math.max(r.width, 248),
-    });
-  }, []);
+    const rawW = Math.max(r.width, 248);
+    const estH = estimatePortfolioMenuHeight(options.length, undefined);
+    setFixedPos(clampPortfolioFloatingMenuRect(r, rawW, estH));
+  }, [options.length]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");

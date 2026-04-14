@@ -1,9 +1,12 @@
+import type { NonprofitSearchCard } from "../../../src/lib/nonprofit-chat-cards"
+
 export type ChatRole = "user" | "assistant"
 
 export type ChatMessage = {
     id: string
     role: ChatRole
     text: string
+    nonprofitCards?: NonprofitSearchCard[]
 }
 
 export const CHAT_STORAGE_PREFIX = "curastem-hackathon-chat-"

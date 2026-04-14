@@ -1,8 +1,9 @@
-import { getFavoriteThingLines, loadYouProfile } from "./youStorage"
+import { buildDashboardChatContextPromptSection } from "../chat/dashboardChatContext"
 
 /**
- * Prepends system date + user profile + favorite things (same sections as web.tsx
- * `getSystemPromptWithContext` / first-turn hidden context), then the chat transcript.
+ * Builds the **user** message sent to `/api/gemini`: session date/time, dashboard UI context,
+ * then the chat transcript. "You" profile (name, job, favorites) is sent separately as
+ * `userProfile` in the JSON body and merged into the **system** prompt on the server.
  */
 export function buildGeminiPromptWithYouContext(transcript: string): string {
     const now = new Date()
@@ -16,16 +17,9 @@ export function buildGeminiPromptWithYouContext(transcript: string): string {
         minute: "2-digit",
     })}`
 
-    const { name, jobTitle } = loadYouProfile()
-    if (name.trim() || jobTitle.trim()) {
-        prompt += `\n\n[User profile]`
-        if (name.trim()) prompt += `\nName: ${name.trim()}`
-        if (jobTitle.trim()) prompt += `\nJob title: ${jobTitle.trim()}`
-    }
-
-    const favorites = getFavoriteThingLines()
-    if (favorites.length > 0) {
-        prompt += `\n\n[User's Favorite Things & Personal Facts]\n${favorites.join("\n")}`
+    const dashboardCtx = buildDashboardChatContextPromptSection()
+    if (dashboardCtx.trim()) {
+        prompt += `\n\n${dashboardCtx}`
     }
 
     prompt += `\n\n---\n\n${transcript}`

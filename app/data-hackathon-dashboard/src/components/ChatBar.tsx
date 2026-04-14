@@ -149,13 +149,16 @@ export function ChatBar({
         const full = (text + attachmentNote).trim()
         if (!full) return
 
+        const payload = { text, files }
+        // Clear immediately — parent `onSend` often awaits streaming; do not tie composer to that.
+        setMessage("")
+        setAttachments((prev) => {
+            prev.forEach(revokePreview)
+            return []
+        })
+
         try {
-            await onSend({ text, files })
-            setMessage("")
-            setAttachments((prev) => {
-                prev.forEach(revokePreview)
-                return []
-            })
+            await onSend(payload)
         } catch {
             // Parent shows errorBanner
         }

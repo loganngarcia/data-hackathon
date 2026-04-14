@@ -1,9 +1,12 @@
 "use client";
 
-import { ChatSessionPage } from "@/dashboard-ui/pages/ChatSessionPage";
-import { useDashboardShell } from "@/dashboard-ui/shell-context";
+import { Suspense } from "react";
+import { ChatWithOrgRail } from "./ChatWithOrgRail";
 
 export default function ChatRoutePage() {
-  const { padLeft, isMobile } = useDashboardShell();
-  return <ChatSessionPage leftInset={padLeft} isMobile={isMobile} />;
+  return (
+    <Suspense fallback={null}>
+      <ChatWithOrgRail />
+    </Suspense>
+  );
 }

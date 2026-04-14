@@ -58,3 +58,52 @@
   background: var(--border-subtle);
   margin: 1.5em 0;
 }
+
+.chat-nonprofit-result-cards .chat-nonprofit-show-more {
+  display: block;
+  width: 100%;
+  margin: 0; /* spacing from parent `.tp-portfolio-home-list` gap (10px), same as between cards */
+  padding: 10px 14px;
+  border-radius: 28px;
+  border: 0.33px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  outline: none;
+}
+
+.chat-nonprofit-result-cards .chat-nonprofit-show-more:hover {
+  background: var(--hover-subtle);
+}
+
+.chat-nonprofit-result-cards .chat-nonprofit-show-more:focus,
+.chat-nonprofit-result-cards .chat-nonprofit-show-more:focus-visible {
+  outline: none;
+}
+
+.chat-user-org-context-chip-avatar {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-user-org-context-chip-avatar .tp-org-avatar {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  font-size: 9px;
+}
+
+.chat-user-org-context-chip-avatar .tp-org-avatar-img {
+  width: 22px !important;
+  height: 22px !important;
+}

@@ -1,3 +1,4 @@
+import { buildDashboardChatContextPromptSection } from "../../../src/dashboard-ui/chat/dashboardChatContext"
 import { getFavoriteThingLines, loadYouProfile } from "./youStorage"
 
 /**
@@ -26,6 +27,11 @@ export function buildGeminiPromptWithYouContext(transcript: string): string {
     const favorites = getFavoriteThingLines()
     if (favorites.length > 0) {
         prompt += `\n\n[User's Favorite Things & Personal Facts]\n${favorites.join("\n")}`
+    }
+
+    const dashboardCtx = buildDashboardChatContextPromptSection()
+    if (dashboardCtx.trim()) {
+        prompt += `\n\n${dashboardCtx}`
     }
 
     prompt += `\n\n---\n\n${transcript}`

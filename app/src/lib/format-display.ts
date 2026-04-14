@@ -1,3 +1,5 @@
+import type { PeerBenchmarkMetricFormat } from "@/lib/types";
+
 /** Shared number formatting for Tipping Point surfaces (dashboard + legacy deck). */
 
 export function formatCompactCurrency(value: number) {
@@ -69,17 +71,38 @@ export function formatReserveCoverage(months: number): string {
 }
 
 /** True when runway is under 6 months (`formatReserveCoverage` uses the days branch). */
-export function reserveCoverageIsLow(months: number): boolean {
+export function reserveCoverageIsLow(months: number | null): boolean {
+  if (months === null || !Number.isFinite(months)) return false;
   return months < 6;
 }
 
-export function formatBenchmarkValue(label: string, value: number) {
-  if (label.includes("%")) {
-    return `${value.toFixed(1)}%`;
-  }
-  if (label === "Reserve months") {
-    return formatReserveCoverage(value);
-  }
+/** Portfolio / list card meta: e.g. `6.4 years reserve`, `8.2 months reserve`. */
+export function formatReserveCoverageMeta(months: number): string {
+  return `${formatReserveCoverage(months)} reserve`;
+}
 
-  return value.toFixed(1);
+/** Portfolio / list card meta: e.g. `$1.1M net assets`. */
+export function formatNetAssetsMeta(value: number): string {
+  return `${formatCompactCurrency(value)} net assets`;
+}
+
+/** Em dash when a benchmark value is missing from TEOS / portfolio data. */
+const BENCHMARK_EM_DASH = "\u2014";
+
+export function formatBenchmarkValue(format: PeerBenchmarkMetricFormat, value: number | null): string {
+  if (value === null || (typeof value === "number" && !Number.isFinite(value))) {
+    return BENCHMARK_EM_DASH;
+  }
+  switch (format) {
+    case "reserve_months":
+      return formatReserveCoverage(value);
+    case "percent":
+      return `${value.toFixed(1)}%`;
+    case "ratio":
+      return value.toFixed(1);
+    case "usd":
+      return formatUsdFull(value);
+    default:
+      return String(value);
+  }
 }

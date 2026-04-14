@@ -9,6 +9,11 @@ import type {
 import { NONPROFIT_SEARCH_SYSTEM_INSTRUCTION } from "@/lib/gemini-nonprofit-tools";
 import { SEARCH_NONPROFITS_OPENAI_TOOL } from "@/lib/search-nonprofits-openai-tool";
 import { getNonprofitWorkerBaseUrl } from "@/lib/nonprofit-worker-url";
+import {
+  irs990SearchRowsToChatCards,
+  mergeNonprofitSearchCards,
+  type NonprofitSearchCard,
+} from "@/lib/nonprofit-chat-cards";
 
 export type NonprofitToolStep = {
   name: string;
@@ -22,6 +27,8 @@ export type RunNonprofitAgentOk = {
   steps: NonprofitToolStep[];
   turns: number;
   warning?: string;
+  /** TEOS search rows rendered as portfolio-style links in chat (streaming + JSON API). */
+  nonprofitSearchCards?: NonprofitSearchCard[];
 };
 
 export type RunNonprofitAgentErr = {
@@ -135,6 +142,8 @@ export async function runOpenAINonprofitToolAgent(options: {
   userContent: ChatCompletionUserMessageParam["content"];
   maxTurns?: number;
   workerBaseUrl?: string;
+  /** Defaults to `NONPROFIT_SEARCH_SYSTEM_INSTRUCTION` (TEOS tools + UI hints). */
+  systemInstruction?: string;
 }): Promise<RunNonprofitAgentResult> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
@@ -144,13 +153,18 @@ export async function runOpenAINonprofitToolAgent(options: {
   const openai = new OpenAI({ apiKey });
   const maxTurns = Math.min(12, Math.max(1, options.maxTurns ?? 8));
   const baseUrl = (options.workerBaseUrl ?? getNonprofitWorkerBaseUrl()).replace(/\/$/, "");
+  const systemInstruction =
+    typeof options.systemInstruction === "string" && options.systemInstruction.trim()
+      ? options.systemInstruction.trim()
+      : NONPROFIT_SEARCH_SYSTEM_INSTRUCTION;
 
   const messages: ChatCompletionMessageParam[] = [
-    { role: "system", content: NONPROFIT_SEARCH_SYSTEM_INSTRUCTION },
+    { role: "system", content: systemInstruction },
     { role: "user", content: options.userContent },
   ];
 
   const steps: NonprofitToolStep[] = [];
+  let searchCards: NonprofitSearchCard[] = [];
   let lastText = "";
   let turn = 0;
 
@@ -182,7 +196,13 @@ export async function runOpenAINonprofitToolAgent(options: {
     if (toolCalls.length === 0) {
       const text = msg.content?.trim() ?? "";
       lastText = text;
-      return { ok: true, text: lastText || text, steps, turns: turn };
+      return {
+        ok: true,
+        text: lastText || text,
+        steps,
+        turns: turn,
+        ...(searchCards.length ? { nonprofitSearchCards: searchCards } : {}),
+      };
     }
 
     for (const tc of toolCalls) {
@@ -202,6 +222,9 @@ export async function runOpenAINonprofitToolAgent(options: {
       }
       const result = await runSearchTool(baseUrl, args);
       steps.push({ name, args, resultSummary: summarizeSearchResult(result) });
+      const rows = (result as { rows?: unknown[] }).rows;
+      const batch = irs990SearchRowsToChatCards(Array.isArray(rows) ? rows : undefined);
+      searchCards = mergeNonprofitSearchCards(searchCards, batch);
       messages.push({
         role: "tool",
         tool_call_id: tc.id,
@@ -216,6 +239,7 @@ export async function runOpenAINonprofitToolAgent(options: {
     steps,
     turns: turn,
     warning: "Max tool-calling turns exceeded",
+    ...(searchCards.length ? { nonprofitSearchCards: searchCards } : {}),
   };
 }
 
@@ -231,6 +255,8 @@ export function streamOpenAINonprofitToolAgentAsGeminiSSE(options: {
   userContent: ChatCompletionUserMessageParam["content"];
   maxTurns?: number;
   workerBaseUrl?: string;
+  /** Defaults to `NONPROFIT_SEARCH_SYSTEM_INSTRUCTION`. */
+  systemInstruction?: string;
 }): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream({
@@ -243,9 +269,13 @@ export function streamOpenAINonprofitToolAgentAsGeminiSSE(options: {
       const openai = new OpenAI({ apiKey });
       const maxTurns = Math.min(12, Math.max(1, options.maxTurns ?? 8));
       const baseUrl = (options.workerBaseUrl ?? getNonprofitWorkerBaseUrl()).replace(/\/$/, "");
+      const systemInstruction =
+        typeof options.systemInstruction === "string" && options.systemInstruction.trim()
+          ? options.systemInstruction.trim()
+          : NONPROFIT_SEARCH_SYSTEM_INSTRUCTION;
 
       const messages: ChatCompletionMessageParam[] = [
-        { role: "system", content: NONPROFIT_SEARCH_SYSTEM_INSTRUCTION },
+        { role: "system", content: systemInstruction },
         { role: "user", content: options.userContent },
       ];
 
@@ -307,6 +337,13 @@ export function streamOpenAINonprofitToolAgentAsGeminiSSE(options: {
               continue;
             }
             const result = await runSearchTool(baseUrl, args);
+            const rows = (result as { rows?: unknown[] }).rows;
+            const batch = irs990SearchRowsToChatCards(Array.isArray(rows) ? rows : undefined);
+            if (batch.length > 0) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ nonprofitSearchCards: batch })}\n\n`),
+              );
+            }
             messages.push({
               role: "tool",
               tool_call_id: tc.id,

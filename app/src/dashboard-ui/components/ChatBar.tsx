@@ -29,6 +29,17 @@ type DashAttachment = {
     previewUrl?: string
 }
 
+/** Matches web.tsx `processFiles`: image MIME, plus extension fallback when type is missing (some pickers). */
+const IMAGE_NAME_RE = /\.(avif|bmp|gif|heic|jpe?g|png|svg|webp)$/i
+
+function isImageFile(file: File): boolean {
+    if (file.type.startsWith("image/")) return true
+    if (!file.type || file.type === "application/octet-stream") {
+        return IMAGE_NAME_RE.test(file.name)
+    }
+    return false
+}
+
 function fileLabel(name: string, mime: string): string {
     const ext = name.split(".").pop()
     if (ext && ext !== name) return ext.toUpperCase()
@@ -47,11 +58,14 @@ export type ChatBarOnSend = (payload: {
 /** Bottom chat composer — light-mode visuals aligned with web.tsx ChatInputBar; + opens the file picker immediately. */
 export function ChatBar({
     leftInset = 0,
+    rightInset = 0,
     onSend,
     isSending = false,
     errorBanner = null,
 }: {
     leftInset?: number
+    /** When a right rail (e.g. org detail panel) is open, keeps composer aligned with visible viewport. */
+    rightInset?: number
     onSend: ChatBarOnSend
     isSending?: boolean
     errorBanner?: string | null
@@ -122,7 +136,7 @@ export function ChatBar({
             for (const file of Array.from(files)) {
                 if (next.length >= MAX_FILES) break
                 const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-                const isImg = file.type.startsWith("image/")
+                const isImg = isImageFile(file)
                 const previewUrl = isImg ? URL.createObjectURL(file) : undefined
                 next.push({
                     id,
@@ -151,13 +165,16 @@ export function ChatBar({
         const full = (text + attachmentNote).trim()
         if (!full) return
 
+        const payload = { text, files }
+        // Clear immediately — parent `onSend` often awaits streaming; do not tie composer to that.
+        setMessage("")
+        setAttachments((prev) => {
+            prev.forEach(revokePreview)
+            return []
+        })
+
         try {
-            await onSend({ text, files })
-            setMessage("")
-            setAttachments((prev) => {
-                prev.forEach(revokePreview)
-                return []
-            })
+            await onSend(payload)
         } catch {
             // Parent shows errorBanner
         }
@@ -384,7 +401,7 @@ export function ChatBar({
                 style={{
                     position: "fixed",
                     left: leftInset,
-                    right: 0,
+                    right: rightInset,
                     bottom: 0,
                     transition: SIDEBAR_LAYOUT_TRANSITION,
                     zIndex: 5000,
@@ -540,29 +557,37 @@ export function ChatBar({
                 .uploaded-file-container::-webkit-scrollbar { display: none; }
               `}</style>
                             {attachments.map((att) =>
-                                att.kind === "image" && att.previewUrl ? (
+                                att.kind === "image" ? (
                                     <div
                                         key={att.id}
                                         data-layer="uploaded file"
+                                        className="UploadedFile"
                                         style={{
                                             width: 86,
                                             height: 86,
                                             flexShrink: 0,
+                                            marginRight: 8,
                                             position: "relative",
                                             background: "var(--bg)",
                                             border:
                                                 "0.33px solid var(--border-subtle)",
                                             overflow: "hidden",
                                             borderRadius: 16,
+                                            flexDirection: "column",
+                                            justifyContent: "space-between",
+                                            alignItems: "flex-start",
                                             display: "inline-flex",
                                         }}
                                     >
                                         <button
                                             type="button"
                                             aria-label={`Remove ${att.file.name}`}
-                                            onClick={() =>
+                                            onClick={(e) => {
+                                                e.stopPropagation()
                                                 removeAttachment(att.id)
-                                            }
+                                            }}
+                                            data-layer="remove button"
+                                            className="RemoveButton"
                                             style={{
                                                 position: "absolute",
                                                 right: 6,
@@ -596,15 +621,23 @@ export function ChatBar({
                                                 />
                                             </svg>
                                         </button>
-                                        <img
-                                            src={att.previewUrl}
-                                            alt={att.file.name}
-                                            style={{
-                                                width: "100%",
-                                                height: "100%",
-                                                objectFit: "cover",
-                                            }}
-                                        />
+                                        {att.previewUrl ? (
+                                            // eslint-disable-next-line @next/next/no-img-element -- blob preview URLs (same as web.tsx ChatInput)
+                                            <img
+                                                src={att.previewUrl}
+                                                alt={att.file.name}
+                                                style={{
+                                                    width: "100%",
+                                                    height: "100%",
+                                                    borderRadius: 8,
+                                                    objectFit: "cover",
+                                                    display: "block",
+                                                    position: "absolute",
+                                                    top: 0,
+                                                    left: 0,
+                                                }}
+                                            />
+                                        ) : null}
                                     </div>
                                 ) : (
                                     <div

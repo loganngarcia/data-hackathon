@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
+import { mergeNonprofitSearchCards } from "../../../src/lib/nonprofit-chat-cards"
 import type { ChatMessage } from "../chat/types"
 import { isHoverCapable } from "../chat/hover"
 import { formatAssistantError, streamGeminiReply } from "../chat/geminiFetch"
@@ -65,15 +66,33 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
                 { id: assistantId, role: "assistant", text: "" },
             ])
             try {
-                await streamGeminiReply(transcript, (delta) => {
-                    setMessages((prev) =>
-                        prev.map((m) =>
-                            m.id === assistantId
-                                ? { ...m, text: m.text + delta }
-                                : m,
-                        ),
-                    )
-                })
+                await streamGeminiReply(
+                    transcript,
+                    (delta) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? { ...m, text: m.text + delta }
+                                    : m,
+                            ),
+                        )
+                    },
+                    (cards) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? {
+                                          ...m,
+                                          nonprofitCards: mergeNonprofitSearchCards(
+                                              m.nonprofitCards ?? [],
+                                              cards,
+                                          ),
+                                      }
+                                    : m,
+                            ),
+                        )
+                    },
+                )
                 setMessages((prev) => {
                     saveChatMessages(chatId, prev)
                     return prev
@@ -126,6 +145,21 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
                             prev.map((m) =>
                                 m.id === assistantId
                                     ? { ...m, text: m.text + delta }
+                                    : m,
+                            ),
+                        )
+                    },
+                    (cards) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? {
+                                          ...m,
+                                          nonprofitCards: mergeNonprofitSearchCards(
+                                              m.nonprofitCards ?? [],
+                                              cards,
+                                          ),
+                                      }
                                     : m,
                             ),
                         )

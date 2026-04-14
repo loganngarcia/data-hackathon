@@ -231,6 +231,10 @@ function extractReturnRow(xmlText, sourceFilename, returnPkOverride) {
     voting_members_governing_cnt: irs990.VotingMembersGoverningBodyCnt,
     voting_members_independent_cnt: irs990.VotingMembersIndependentCnt,
     total_program_service_expenses_amt: irs990.TotalProgramServiceExpensesAmt,
+    cy_total_management_and_general_expenses_amt:
+      irs990.CYTotalManagementAndGeneralExpensesAmt ??
+      irs990.CYTotalManagementAndGeneralExpenseAmt ??
+      irs990.TotalManagementAndGeneralExpensesAmt,
     cy_total_fundraising_expense_amt: irs990.CYTotalFundraisingExpenseAmt,
     cy_contributions_grants_amt: irs990.CYContributionsGrantsAmt,
     cy_program_service_revenue_amt: irs990.CYProgramServiceRevenueAmt,
@@ -311,6 +315,7 @@ function buildInsertSql({ row, people, returnPk }) {
     "voting_members_governing_cnt",
     "voting_members_independent_cnt",
     "total_program_service_expenses_amt",
+    "cy_total_management_and_general_expenses_amt",
     "cy_total_fundraising_expense_amt",
     "cy_contributions_grants_amt",
     "cy_program_service_revenue_amt",

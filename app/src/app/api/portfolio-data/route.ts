@@ -15,11 +15,36 @@ import {
   toOrganizationTitleCase,
 } from "@/lib/org-name-format";
 import { getNonprofitWorkerBaseUrl } from "@/lib/nonprofit-worker-url";
-import { parseAssetsBandQuery, type AssetsBandId } from "@/lib/assets-band";
-import { parseRevenueBandQuery, type RevenueBandId } from "@/lib/revenue-band";
-import { parseReserveBandQuery, type ReserveBandId } from "@/lib/reserve-band";
-import { parseBoardBandQuery, type BoardBandId } from "@/lib/board-band";
-import { irs990BrowseRowToYearFinancials } from "@/lib/teos-year-financial";
+import {
+  parseAssetsBandQuery,
+  parseAssetsBandsQuery,
+  type AssetsBandSelection,
+} from "@/lib/assets-band";
+import {
+  parseRevenueBandQuery,
+  parseRevenueBandsQuery,
+  type RevenueBandSelection,
+} from "@/lib/revenue-band";
+import {
+  parseReserveBandQuery,
+  parseReserveBandsQuery,
+  type ReserveBandSelection,
+} from "@/lib/reserve-band";
+import {
+  parseBoardBandQuery,
+  parseBoardBandsQuery,
+  type BoardBandSelection,
+} from "@/lib/board-band";
+import {
+  isCountBandId,
+  parseCountBandsQuery,
+  parseStatesQuery,
+  type CountBandId,
+  type CountBandSelection,
+  type StateAbbrevSelection,
+} from "@/lib/portfolio-toolbar-bands";
+import { filterTeosBrowseRows } from "@/lib/portfolio-browse-filters";
+import { formatEin9, mapIrs990Rows, type Irs990BrowseRow } from "@/lib/irs990-browse-map";
 import type { ScreenerRow } from "@/lib/types";
 
 const PROPUBLICA_ORG = "https://projects.propublica.org/nonprofits/api/v2/organizations";
@@ -67,143 +92,6 @@ async function tryWorkerCache(): Promise<{
   }
 }
 
-type Irs990BrowseRow = {
-  return_pk?: string;
-  ein?: string;
-  name?: string;
-  city?: string;
-  state?: string;
-  website_txt?: string | null;
-  mission_desc?: string | null;
-  activity_mission_desc?: string | null;
-  cy_total_revenue_amt?: number | null;
-  py_total_revenue_amt?: number | null;
-  cy_total_expenses_amt?: number | null;
-  py_total_expenses_amt?: number | null;
-  cy_rev_less_expenses_amt?: number | null;
-  net_assets_eoy_amt?: number | null;
-  net_assets_boy_amt?: number | null;
-  cy_contributions_grants_amt?: number | null;
-  cy_program_service_revenue_amt?: number | null;
-  cy_investment_income_amt?: number | null;
-  cy_other_revenue_amt?: number | null;
-  total_program_service_expenses_amt?: number | null;
-  formation_yr?: number | null;
-  total_employee_cnt?: number | null;
-  total_volunteers_cnt?: number | null;
-  tax_yr?: number | null;
-  organization_501c3_ind?: number | null;
-  /** Worker D1 `org_logo_cache` joined in `/api/irs990-browse`. */
-  logo_cached_domain?: string | null;
-  /** Worker-built `img.logo.dev` URL when `LOGO_DEV_PUBLISHABLE_KEY` is set on the Worker. */
-  logo_image_url?: string | null;
-};
-
-function formatEin9(digits: string): string {
-  return `${digits.slice(0, 2)}-${digits.slice(2)}`;
-}
-
-function parseFormationYearFrom990(v: unknown): number | undefined {
-  if (v == null) return undefined;
-  const n = typeof v === "number" ? v : parseInt(String(v), 10);
-  if (!Number.isFinite(n)) return undefined;
-  const y = Math.floor(n);
-  const maxY = new Date().getFullYear() + 1;
-  if (y < 1600 || y > maxY) return undefined;
-  return y;
-}
-
-function parseNonnegativeInt990(v: unknown): number | undefined {
-  if (v == null || v === "") return undefined;
-  const n = typeof v === "number" ? v : parseInt(String(v), 10);
-  if (!Number.isFinite(n)) return undefined;
-  const i = Math.floor(n);
-  if (i < 0) return undefined;
-  return i;
-}
-
-function mapIrs990Rows(rows: Irs990BrowseRow[]): {
-  screener: ScreenerRow[];
-  revenueByOrg: Record<string, { currentYearRevenue: number; priorYearRevenue: number }>;
-} {
-  const screener: ScreenerRow[] = [];
-  const revenueByOrg: Record<string, { currentYearRevenue: number; priorYearRevenue: number }> = {};
-
-  for (const r of rows) {
-    const pk = String(r.return_pk ?? r.ein ?? "");
-    const id = `irs990-${pk}`;
-    const rev = Number(r.cy_total_revenue_amt ?? 0);
-    const prev = Number(r.py_total_revenue_amt ?? 0);
-    const exp = Number(r.cy_total_expenses_amt ?? 0);
-    const na = Number(r.net_assets_eoy_amt ?? 0);
-    let growth = 0;
-    if (Math.abs(prev) > 1e-6) growth = ((rev - prev) / Math.abs(prev)) * 100;
-    const reserveM = exp > 0 ? (na / exp) * 12 : 0;
-    const staff = Math.max(1, Math.floor(Number(r.total_employee_cnt ?? 1)));
-    const einDigits = String(r.ein ?? "").replace(/\D/g, "").slice(0, 9).padStart(9, "0");
-    const einFmt = einDigits.length === 9 ? formatEin9(einDigits) : "—";
-
-    const years = irs990BrowseRowToYearFinancials(r);
-    const resilience = years ? computeResilienceScore(years) : null;
-    const legacyComposite = Math.min(
-      100,
-      Math.max(0, 38 + Math.min(22, growth / 3) + Math.min(28, reserveM * 1.5)),
-    );
-    const composite = resilience?.composite_score ?? legacyComposite;
-    const riskBand = resilience ? tierToRiskBand(resilience.tier) : reserveM >= 6 ? "Foundation" : reserveM >= 3 ? "Steady" : "Watch";
-    const score = Math.round(Math.max(0, Math.min(100, composite)));
-
-    const websiteUrl = normalizeWebsiteUrl(r.website_txt ?? undefined);
-    const rawLogo = r.logo_cached_domain;
-    const logoDomain =
-      typeof rawLogo === "string" && rawLogo.trim().length > 0
-        ? rawLogo
-            .trim()
-            .replace(/^https?:\/\//i, "")
-            .replace(/\/.*$/, "")
-            .toLowerCase()
-        : undefined;
-    const missionRaw = pickMissionRaw(r.activity_mission_desc, r.mission_desc);
-    const missionSummary = formatOrgMissionDescription(missionRaw);
-    const foundedYear = parseFormationYearFrom990(r.formation_yr);
-    const employeeCount = parseNonnegativeInt990(r.total_employee_cnt);
-    const volunteerCount = parseNonnegativeInt990(r.total_volunteers_cnt);
-    const netAssetsEoy = Number(r.net_assets_eoy_amt ?? 0);
-    screener.push({
-      id,
-      organizationName: toOrganizationTitleCase(
-        (r.name ?? "Unknown organization").trim() || "Unknown organization",
-      ),
-      ein: einFmt,
-      city: formatCityDisplay((r.city ?? "—").trim() || "—"),
-      state: formatStateAbbrevDisplay((r.state ?? "—").trim() || "—"),
-      missionArea: r.organization_501c3_ind === 1 ? "501(c)(3)" : "Nonprofit (IRS 990)",
-      revenue: rev,
-      netAssetsEoy: Number.isFinite(netAssetsEoy) ? netAssetsEoy : 0,
-      growthRate: Math.round(growth * 10) / 10,
-      reserveMonths: Math.round(reserveM * 10) / 10,
-      staffCount: staff,
-      riskBand,
-      screenScore: score,
-      ...(websiteUrl ? { websiteUrl } : {}),
-      ...(logoDomain ? { logoDomain } : {}),
-      ...(typeof r.logo_image_url === "string" && r.logo_image_url.trim().length > 0
-        ? { logoImageUrl: r.logo_image_url.trim() }
-        : {}),
-      ...(missionSummary ? { missionSummary } : {}),
-      ...(foundedYear !== undefined ? { foundedYear } : {}),
-      ...(employeeCount !== undefined ? { employeeCount } : {}),
-      ...(volunteerCount !== undefined ? { volunteerCount } : {}),
-    });
-    revenueByOrg[id] = {
-      currentYearRevenue: rev,
-      priorYearRevenue: prev,
-    };
-  }
-
-  return { screener, revenueByOrg };
-}
-
 /** One page of TEOS rows from Worker (`random=1` → `ORDER BY RANDOM()` in D1; else A–Z + offset). */
 async function fetchIrs990Page(
   base: string,
@@ -212,13 +100,13 @@ async function fetchIrs990Page(
   excludeEins: string[],
   options?: {
     random?: boolean;
-    revenueBand?: RevenueBandId;
-    assetsBand?: AssetsBandId;
-    reserveBand?: ReserveBandId;
-    employeeBand?: string;
-    volunteerBand?: string;
-    boardBand?: BoardBandId;
-    state?: string;
+    revenueBands?: RevenueBandSelection;
+    assetsBands?: AssetsBandSelection;
+    reserveBands?: ReserveBandSelection;
+    employeeBands?: CountBandSelection;
+    volunteerBands?: CountBandSelection;
+    boardBands?: BoardBandSelection;
+    states?: StateAbbrevSelection;
   },
 ): Promise<{
   screener: ScreenerRow[];
@@ -230,31 +118,33 @@ async function fetchIrs990Page(
   }
   const excludeParam = excludeEins.length ? `&exclude=${encodeURIComponent(excludeEins.join(","))}` : "";
   const randomParam = options?.random ? "&random=1" : "";
-  const band = options?.revenueBand;
+  const rev = options?.revenueBands;
   const revenueParam =
-    band && band !== "all" ? `&revenueBand=${encodeURIComponent(band)}` : "";
-  const eb = options?.employeeBand;
+    rev && rev.length > 0 ? `&revenueBands=${encodeURIComponent(rev.join(","))}` : "";
+  const eb = options?.employeeBands;
   const employeeParam =
-    eb && eb !== "all" ? `&employeeBand=${encodeURIComponent(eb)}` : "";
-  const vb = options?.volunteerBand;
+    eb && eb.length > 0 ? `&employeeBands=${encodeURIComponent(eb.join(","))}` : "";
+  const vb = options?.volunteerBands;
   const volunteerParam =
-    vb && vb !== "all" ? `&volunteerBand=${encodeURIComponent(vb)}` : "";
-  const bb = options?.boardBand;
+    vb && vb.length > 0 ? `&volunteerBands=${encodeURIComponent(vb.join(","))}` : "";
+  const bb = options?.boardBands;
   const boardParam =
-    bb && bb !== "all" ? `&boardBand=${encodeURIComponent(bb)}` : "";
-  const st = options?.state;
-  const stateParam = st && st !== "all" ? `&state=${encodeURIComponent(st)}` : "";
-  const ab = options?.assetsBand;
+    bb && bb.length > 0 ? `&boardBands=${encodeURIComponent(bb.join(","))}` : "";
+  const st = options?.states;
+  const stateParam =
+    st && st.length > 0 ? `&states=${encodeURIComponent(st.join(","))}` : "";
+  const ab = options?.assetsBands;
   const assetsParam =
-    ab && ab !== "all" ? `&assetsBand=${encodeURIComponent(ab)}` : "";
-  const rb = options?.reserveBand;
+    ab && ab.length > 0 ? `&assetsBands=${encodeURIComponent(ab.join(","))}` : "";
+  const rb = options?.reserveBands;
   const reserveParam =
-    rb && rb !== "all" ? `&reserveBand=${encodeURIComponent(rb)}` : "";
+    rb && rb.length > 0 ? `&reserveBands=${encodeURIComponent(rb.join(","))}` : "";
   const off = options?.random ? 0 : offset;
   try {
     const res = await fetch(
       `${base}/api/irs990-browse?limit=${limit}&offset=${off}${excludeParam}${randomParam}${revenueParam}${assetsParam}${reserveParam}${employeeParam}${volunteerParam}${boardParam}${stateParam}`,
       {
+        cache: "no-store",
         headers: { Accept: "application/json" },
         signal: AbortSignal.timeout(15_000),
       },
@@ -264,7 +154,7 @@ async function fetchIrs990Page(
       rows?: Irs990BrowseRow[];
       hasMore?: boolean;
     };
-    const rows = data.rows ?? [];
+    const rows = filterTeosBrowseRows(data.rows ?? [], options);
     return {
       ...mapIrs990Rows(rows),
       hasMore: Boolean(data.hasMore),
@@ -494,22 +384,78 @@ export async function GET(request: Request) {
   const pageSize = Math.min(100, Math.max(4, parseInt(url.searchParams.get("pageSize") ?? "20", 10) || 20));
   const base = getNonprofitWorkerBaseUrl();
   const clientExclude = parseExcludeEinsQuery(url.searchParams.get("excludeEins"));
-  const revenueBand = parseRevenueBandQuery(url.searchParams.get("revenueBand"));
-  const assetsBand = parseAssetsBandQuery(url.searchParams.get("assetsBand"));
-  const reserveBand = parseReserveBandQuery(url.searchParams.get("reserveBand"));
-  const employeeBand = (url.searchParams.get("employeeBand") ?? "").trim();
-  const volunteerBand = (url.searchParams.get("volunteerBand") ?? "").trim();
-  const boardBand = parseBoardBandQuery(url.searchParams.get("boardBand"));
-  const stateFilter = (url.searchParams.get("state") ?? "").trim();
+  const revenueBandsParsed = parseRevenueBandsQuery(url.searchParams.get("revenueBands"));
+  const revenueBandLegacy = parseRevenueBandQuery(url.searchParams.get("revenueBand"));
+  const revenueBands: RevenueBandSelection =
+    revenueBandsParsed.length > 0
+      ? revenueBandsParsed
+      : revenueBandLegacy !== "all"
+        ? [revenueBandLegacy as RevenueBandSelection[number]]
+        : [];
+
+  const assetsBandsParsed = parseAssetsBandsQuery(url.searchParams.get("assetsBands"));
+  const assetsBandLegacy = parseAssetsBandQuery(url.searchParams.get("assetsBand"));
+  const assetsBands: AssetsBandSelection =
+    assetsBandsParsed.length > 0
+      ? assetsBandsParsed
+      : assetsBandLegacy !== "all"
+        ? [assetsBandLegacy as AssetsBandSelection[number]]
+        : [];
+
+  const reserveBandsParsed = parseReserveBandsQuery(url.searchParams.get("reserveBands"));
+  const reserveBandLegacy = parseReserveBandQuery(url.searchParams.get("reserveBand"));
+  const reserveBands: ReserveBandSelection =
+    reserveBandsParsed.length > 0
+      ? reserveBandsParsed
+      : reserveBandLegacy !== "all"
+        ? [reserveBandLegacy as ReserveBandSelection[number]]
+        : [];
+
+  const employeeBandsParsed = parseCountBandsQuery(url.searchParams.get("employeeBands"));
+  const employeeBandLegacy = (url.searchParams.get("employeeBand") ?? "").trim();
+  const employeeBands: CountBandSelection =
+    employeeBandsParsed.length > 0
+      ? employeeBandsParsed
+      : employeeBandLegacy && employeeBandLegacy !== "all" && isCountBandId(employeeBandLegacy)
+        ? [employeeBandLegacy as Exclude<CountBandId, "all">]
+        : [];
+
+  const volunteerBandsParsed = parseCountBandsQuery(url.searchParams.get("volunteerBands"));
+  const volunteerBandLegacy = (url.searchParams.get("volunteerBand") ?? "").trim();
+  const volunteerBands: CountBandSelection =
+    volunteerBandsParsed.length > 0
+      ? volunteerBandsParsed
+      : volunteerBandLegacy && volunteerBandLegacy !== "all" && isCountBandId(volunteerBandLegacy)
+        ? [volunteerBandLegacy as Exclude<CountBandId, "all">]
+        : [];
+
+  const boardBandsParsed = parseBoardBandsQuery(url.searchParams.get("boardBands"));
+  const boardBandLegacy = parseBoardBandQuery(url.searchParams.get("boardBand"));
+  const boardBands: BoardBandSelection =
+    boardBandsParsed.length > 0
+      ? boardBandsParsed
+      : boardBandLegacy !== "all"
+        ? [boardBandLegacy]
+        : [];
+
+  const statesParsed = parseStatesQuery(url.searchParams.get("states"));
+  const stateLegacy = (url.searchParams.get("state") ?? "").trim();
+  const states: StateAbbrevSelection =
+    statesParsed.length > 0
+      ? statesParsed
+      : stateLegacy !== "all" && stateLegacy.length === 2
+        ? [stateLegacy.toUpperCase()]
+        : [];
+
   const browseOpts = {
     random: true as const,
-    revenueBand,
-    ...(assetsBand !== "all" ? { assetsBand } : {}),
-    ...(reserveBand !== "all" ? { reserveBand } : {}),
-    ...(employeeBand && employeeBand !== "all" ? { employeeBand } : {}),
-    ...(volunteerBand && volunteerBand !== "all" ? { volunteerBand } : {}),
-    ...(boardBand !== "all" ? { boardBand } : {}),
-    ...(stateFilter && stateFilter !== "all" ? { state: stateFilter } : {}),
+    revenueBands,
+    assetsBands,
+    reserveBands,
+    employeeBands,
+    volunteerBands,
+    boardBands,
+    states,
   };
 
   if (page >= 2) {

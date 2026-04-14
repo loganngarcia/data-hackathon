@@ -1,4 +1,9 @@
+import {
+    parseNonprofitSearchCardsFromStreamArray,
+    type NonprofitSearchCard,
+} from "@/lib/nonprofit-chat-cards"
 import { buildGeminiPromptWithYouContext } from "../profile/geminiYouContext"
+import { loadYouProfile } from "../profile/youStorage"
 
 /** User-visible copy when the model or proxy fails (shown as an assistant bubble). */
 export function formatAssistantError(err: unknown): string {
@@ -45,19 +50,28 @@ function extractTextFromGeminiChunk(data: unknown): string {
     return parts.map((p) => (typeof p?.text === "string" ? p.text : "")).join("")
 }
 
+function extractNonprofitSearchCards(data: unknown): NonprofitSearchCard[] | null {
+    if (!data || typeof data !== "object") return null
+    const raw = (data as { nonprofitSearchCards?: unknown }).nonprofitSearchCards
+    return parseNonprofitSearchCardsFromStreamArray(raw)
+}
+
 /**
  * Stream a reply from Gemini via `POST /api/gemini` with `{ stream: true }`.
  * Invokes `onDelta` for each text fragment (typically token-sized increments).
+ * Optional `onNonprofitCards` receives TEOS search rows as portfolio-style org links.
  */
 export async function streamGeminiReply(
     transcript: string,
     onDelta: (delta: string) => void,
+    onNonprofitCards?: (cards: NonprofitSearchCard[]) => void,
 ): Promise<void> {
     const message = buildGeminiPromptWithYouContext(transcript)
+    const userProfile = loadYouProfile()
     const r = await fetch("/api/gemini", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, stream: true }),
+        body: JSON.stringify({ message, stream: true, userProfile }),
     })
 
     const ct = r.headers.get("content-type") ?? ""
@@ -104,6 +118,10 @@ export async function streamGeminiReply(
                         (data as { error: { message: string } }).error.message,
                     )
                 }
+                const cardBatch = extractNonprofitSearchCards(data)
+                if (cardBatch?.length && onNonprofitCards) {
+                    onNonprofitCards(cardBatch)
+                }
                 const piece = extractTextFromGeminiChunk(data)
                 if (piece) onDelta(piece)
             }
@@ -115,6 +133,10 @@ export async function streamGeminiReply(
             if (payload && payload !== "[DONE]") {
                 try {
                     const data = JSON.parse(payload) as unknown
+                    const cardBatch = extractNonprofitSearchCards(data)
+                    if (cardBatch?.length && onNonprofitCards) {
+                        onNonprofitCards(cardBatch)
+                    }
                     const piece = extractTextFromGeminiChunk(data)
                     if (piece) onDelta(piece)
                 } catch {

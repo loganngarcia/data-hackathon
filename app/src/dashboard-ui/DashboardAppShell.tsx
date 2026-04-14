@@ -11,6 +11,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LEFT_SIDEBAR_W, LeftSidebar } from "./components/LeftSidebar";
 import { YouSettingsOverlay } from "./components/YouSettingsOverlay";
 import { DashboardShellContext } from "./shell-context";
+import { OrgRailShell } from "./OrgRailShell";
 
 const LEFT_SIDEBAR_OPEN_KEY = "dashboard-left-sidebar-open";
 
@@ -158,7 +159,9 @@ function ShellChrome({ children }: { children: ReactNode }) {
             if (isMobile && isSidebarOpen) closeSidebar();
           }}
         >
-          <div className="main-scroll">{children}</div>
+          <div className="main-scroll">
+            <OrgRailShell>{children}</OrgRailShell>
+          </div>
         </main>
 
         <style>{`
@@ -201,7 +204,9 @@ function ShellChrome({ children }: { children: ReactNode }) {
           overflow: auto;
           overscroll-behavior: contain;
           padding-top: 24px;
+          padding-right: var(--org-rail-width, 0px);
           padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+          box-sizing: border-box;
         }
         @media (max-width: 767px) {
           .main-scroll {

@@ -10,6 +10,10 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import {
+  clampPortfolioFloatingMenuRect,
+  estimatePortfolioMenuHeight,
+} from "./portfolio-floating-menu-rect";
 
 function ChevronDown() {
   return (
@@ -96,12 +100,10 @@ export function PortfolioToolbarDropdown<T extends string>(props: ToolbarDropdow
     const el = chipRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setFixedPos({
-      top: r.bottom + 4,
-      left: r.left,
-      width: Math.max(r.width, menuMaxHeight ? 260 : 248),
-    });
-  }, [menuMaxHeight]);
+    const rawW = Math.max(r.width, menuMaxHeight ? 260 : 248);
+    const estH = estimatePortfolioMenuHeight(options.length, menuMaxHeight);
+    setFixedPos(clampPortfolioFloatingMenuRect(r, rawW, estH));
+  }, [menuMaxHeight, options.length]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -216,6 +218,242 @@ export function PortfolioToolbarDropdown<T extends string>(props: ToolbarDropdow
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     pick(opt.id);
+                  }
+                }}
+                style={{
+                  alignSelf: "stretch",
+                  minHeight: isMobile ? 44 : 36,
+                  paddingLeft: 12,
+                  paddingRight: 12,
+                  borderRadius: 28,
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  display: "flex",
+                  cursor: "pointer",
+                  transition: "background 0.15s ease",
+                  background: "transparent",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isMobile) (e.currentTarget as HTMLDivElement).style.background = "var(--hover-default)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background = "transparent";
+                }}
+              >
+                <span
+                  style={{
+                    flex: "1 1 0",
+                    minWidth: 0,
+                    fontSize: 14,
+                    fontFamily: "var(--font-ui)",
+                    fontWeight: 400,
+                    lineHeight: "19.32px",
+                    color: isSel ? "var(--semantic-accent)" : "var(--text-primary)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {opt.label}
+                </span>
+                <div
+                  style={{
+                    width: 22,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    flexShrink: 0,
+                  }}
+                >
+                  {isSel ? <WebTrailingCheck /> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    ) : null;
+
+  return (
+    <div className={wrapClassName}>
+      <div className="tp-portfolio-toolbar-picker tp-panel-compare-peer-picker">
+        <button
+          ref={chipRef}
+          type="button"
+          className="tp-panel-compare-peer-trigger"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-label={`${ariaLabelPrefix}: ${ariaFilterDetail}. Open menu.`}
+          onClick={() => {
+            if (open) {
+              setOpen(false);
+              return;
+            }
+            if (!chipRef.current || options.length === 0) return;
+            measureChip();
+            setOpen(true);
+          }}
+        >
+          <span className="tp-panel-compare-peer-trigger-label">{triggerLabel}</span>
+          <ChevronDown />
+        </button>
+      </div>
+      {typeof document !== "undefined" && menu ? createPortal(menu, document.body) : null}
+    </div>
+  );
+}
+
+type ToolbarMultiDropdownProps<T extends string> = {
+  wrapClassName: string;
+  options: { id: T; label: string }[];
+  /** Selected option ids (excluding `all`). Empty = “All” / no filter. */
+  selectedIds: T[];
+  onPick: (id: T) => void;
+  triggerLabel: string;
+  ariaLabelPrefix: string;
+  ariaFilterDetail: string;
+  menuMaxHeight?: string;
+};
+
+/** Multi-select: stays open until backdrop click; `all` id clears selection. */
+export function PortfolioToolbarMultiDropdown<T extends string>(props: ToolbarMultiDropdownProps<T>) {
+  const {
+    wrapClassName,
+    options,
+    selectedIds,
+    onPick,
+    triggerLabel,
+    ariaLabelPrefix,
+    ariaFilterDetail,
+    menuMaxHeight,
+  } = props;
+
+  const [open, setOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const chipRef = useRef<HTMLButtonElement>(null);
+  const [fixedPos, setFixedPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const measureChip = useCallback(() => {
+    const el = chipRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const rawW = Math.max(r.width, menuMaxHeight ? 260 : 248);
+    const estH = estimatePortfolioMenuHeight(options.length, menuMaxHeight);
+    setFixedPos(clampPortfolioFloatingMenuRect(r, rawW, estH));
+  }, [menuMaxHeight, options.length]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const q = () => setIsMobile(mq.matches);
+    q();
+    mq.addEventListener("change", q);
+    return () => mq.removeEventListener("change", q);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    measureChip();
+    window.addEventListener("scroll", measureChip, true);
+    window.addEventListener("resize", measureChip);
+    return () => {
+      window.removeEventListener("scroll", measureChip, true);
+      window.removeEventListener("resize", measureChip);
+    };
+  }, [open, measureChip]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const isAllMode = selectedIds.length === 0;
+
+  const menuInnerStyle = useMemo(() => {
+    const base: CSSProperties = {
+      position: "fixed",
+      zIndex: 20001,
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "flex-start",
+      alignItems: "stretch",
+      gap: 4,
+    };
+    if (isMobile) {
+      return {
+        ...base,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        top: "auto",
+        width: "100%",
+        padding: 10,
+        background: "var(--surface-menu)",
+        borderRadius: "36px 36px 0 0",
+        outline: "0.1px solid var(--border-subtle)",
+        outlineOffset: "-0.1px",
+        maxHeight: "min(70vh, 360px)",
+        overflowY: "auto" as const,
+      };
+    }
+    if (fixedPos) {
+      const desktop: CSSProperties = {
+        ...base,
+        left: fixedPos.left,
+        top: fixedPos.top,
+        width: fixedPos.width,
+        padding: 10,
+        background: "var(--surface-menu)",
+        boxShadow: "0px 4px 24px hsla(0, 0, 0%, 0.08)",
+        borderRadius: 28,
+        outline: "0.1px solid var(--border-subtle)",
+        outlineOffset: "-0.1px",
+      };
+      if (menuMaxHeight) {
+        desktop.maxHeight = menuMaxHeight;
+        desktop.overflowY = "auto";
+        desktop.WebkitOverflowScrolling = "touch";
+      }
+      return desktop;
+    }
+    return base;
+  }, [isMobile, fixedPos, menuMaxHeight]);
+
+  const menu =
+    open && (isMobile || fixedPos) && options.length > 0 ? (
+      <>
+        <div
+          role="presentation"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 20000,
+            cursor: "default",
+            background: isMobile ? "var(--overlay-black)" : "transparent",
+          }}
+          onClick={() => setOpen(false)}
+        />
+        <div data-layer="portfolio toolbar menu" onClick={(e) => e.stopPropagation()} style={menuInnerStyle}>
+          {options.map((opt) => {
+            const isSel =
+              String(opt.id) === "all" ? isAllMode : selectedIds.includes(opt.id);
+            return (
+              <div
+                key={String(opt.id)}
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  onPick(opt.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onPick(opt.id);
                   }
                 }}
                 style={{

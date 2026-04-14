@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react"
 import { memo, useCallback, useEffect, useRef, useState } from "react"
+import "../../../src/features/tipping-point/tipping-point-dashboard.css"
 import { renderSimpleMarkdown } from "../chat/chatMarkdown"
 import "../chat/chat-markdown.css"
 import { isHoverCapable } from "../chat/hover"
@@ -9,6 +10,7 @@ import {
 } from "../chat/shareAiMessageImage"
 import { stripMarkdown } from "../chat/stripMarkdown"
 import type { ChatMessage } from "../chat/types"
+import { ChatNonprofitResultCards } from "../../../src/dashboard-ui/components/ChatNonprofitResultCards"
 
 const actionBtn: CSSProperties = {
     width: 28,
@@ -252,6 +254,17 @@ export const MessageBubble = memo(function MessageBubble({
                             baseTextStyle,
                             linkStyle
                         )}
+                    </div>
+                ) : null}
+                {msg.nonprofitCards && msg.nonprofitCards.length > 0 ? (
+                    <div
+                        style={{
+                            alignSelf: "stretch",
+                            width: "100%",
+                            marginTop: msg.text.trim() ? 12 : 0,
+                        }}
+                    >
+                        <ChatNonprofitResultCards cards={msg.nonprofitCards} />
                     </div>
                 ) : null}
 

@@ -12,7 +12,8 @@
  *   POST /api/sync/registry-batch  → sync next N EINs from irs_ein_years not yet in organizations (admin)
  *   GET  /api/stats                → row counts (organizations + IRS index if migrated)
  *   GET  /api/registry             → paginated rows from irs_filings_raw (full IRS index mirror)
- *   GET  /api/irs990-browse        → latest full-Form-990 row per EIN from irs990_xml_returns (TEOS ingest). Query: `revenueBand`, `assetsBand` (net assets EOY), `reserveBand` (reserve coverage months: net_assets_eoy / cy_total_expenses * 12), `employeeBand`, `volunteerBand`, `boardBand` (governing-body voting members: COALESCE(governing_body_voting_cnt, voting_members_governing_cnt)), `state`, etc. When `LOGO_DEV_PUBLISHABLE_KEY` is set, each row includes `logo_image_url` (D1 domains + Logo.dev CDN).
+ *   GET  /api/irs990-browse        → latest full-Form-990 row per EIN from irs990_xml_returns (TEOS ingest). Query: `revenueBands`, `assetsBands`, `reserveBands`, `employeeBands`, `volunteerBands`, `boardBands`, `states` (comma-separated lists; OR within each) plus legacy singular `revenueBand`, `assetsBand`, `reserveBand`, `employeeBand`, `volunteerBand`, `boardBand`, `state`. When `LOGO_DEV_PUBLISHABLE_KEY` is set, each row includes `logo_image_url` (D1 domains + Logo.dev CDN).
+ *   GET  /api/irs990-row           → single TEOS row by `orgId` (`irs990-<return_pk>` or `irs990-ein-<9 digits>`), same row shape as browse (deep links / chat).
  *                                   Query: `random=1` or `order=random` → ORDER BY RANDOM() (offset ignored; use `exclude` for paging).
  *   GET  /api/irs990-bucket-counts → aggregate bucket totals (score formula matches Next mapIrs990Rows)
  *   GET  /api/irs990-website       → latest TEOS `website_txt` for an EIN
@@ -104,6 +105,10 @@ export default {
 
     if (pathname === "/api/irs990-browse" && request.method === "GET") {
       return handleIrs990Browse(request, env);
+    }
+
+    if (pathname === "/api/irs990-row" && request.method === "GET") {
+      return handleIrs990RowByOrgId(request, env);
     }
 
     if (pathname === "/api/irs990-bucket-counts" && request.method === "GET") {
@@ -896,134 +901,256 @@ async function handleIrs990Browse(request: Request, env: Env): Promise<Response>
   const excludeSql =
     exclude.length > 0 ? ` AND r.ein NOT IN (${exclude.map(() => "?").join(",")}) ` : "";
 
-  /** USD bounds on latest-year `cy_total_revenue_amt` (aligned with app `lib/revenue-band.ts`). */
-  const bandParam = (url.searchParams.get("revenueBand") ?? "").trim();
+  /** USD bounds on latest-year `cy_total_revenue_amt` — `revenueBands` (comma) OR legacy `revenueBand` (aligned with app `lib/revenue-band.ts`). */
+  const revenueBandsRaw = (url.searchParams.get("revenueBands") ?? "").trim();
+  const revenueBandLegacy = (url.searchParams.get("revenueBand") ?? "").trim();
+  const revenueParts = [
+    ...new Set(
+      [
+        ...(revenueBandsRaw ? revenueBandsRaw.split(",") : []),
+        ...(revenueBandLegacy && revenueBandLegacy !== "all" ? [revenueBandLegacy] : []),
+      ]
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
   let revenueSql = "";
   const revenueBinds: number[] = [];
-  if (bandParam === "lt10k") {
-    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
-    revenueBinds.push(0, 10_000);
-  } else if (bandParam === "10k_100k") {
-    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
-    revenueBinds.push(10_000, 100_000);
-  } else if (bandParam === "100k_500k") {
-    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
-    revenueBinds.push(100_000, 500_000);
-  } else if (bandParam === "500k_1m") {
-    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
-    revenueBinds.push(500_000, 1_000_000);
-  } else if (bandParam === "1m_5m") {
-    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? AND COALESCE(r.cy_total_revenue_amt, 0) < ? `;
-    revenueBinds.push(1_000_000, 5_000_000);
-  } else if (bandParam === "gt5m") {
-    revenueSql = ` AND COALESCE(r.cy_total_revenue_amt, 0) >= ? `;
-    revenueBinds.push(5_000_000);
+  if (revenueParts.length > 0) {
+    const revCol = `COALESCE(r.cy_total_revenue_amt, 0)`;
+    const clauses: string[] = [];
+    for (const p of revenueParts) {
+      if (p === "lt10k") {
+        clauses.push(`(${revCol} >= ? AND ${revCol} < ?)`);
+        revenueBinds.push(0, 10_000);
+      } else if (p === "10k_100k") {
+        clauses.push(`(${revCol} >= ? AND ${revCol} < ?)`);
+        revenueBinds.push(10_000, 100_000);
+      } else if (p === "100k_500k") {
+        clauses.push(`(${revCol} >= ? AND ${revCol} < ?)`);
+        revenueBinds.push(100_000, 500_000);
+      } else if (p === "500k_1m") {
+        clauses.push(`(${revCol} >= ? AND ${revCol} < ?)`);
+        revenueBinds.push(500_000, 1_000_000);
+      } else if (p === "1m_5m") {
+        clauses.push(`(${revCol} >= ? AND ${revCol} < ?)`);
+        revenueBinds.push(1_000_000, 5_000_000);
+      } else if (p === "gt5m") {
+        clauses.push(`(${revCol} >= ?)`);
+        revenueBinds.push(5_000_000);
+      }
+    }
+    if (clauses.length > 0) {
+      revenueSql = ` AND (${clauses.join(" OR ")}) `;
+    }
   }
 
-  /** Net assets EOY (`net_assets_eoy_amt`) — aligned with app `lib/assets-band.ts`. */
-  const assetsParam = (url.searchParams.get("assetsBand") ?? "").trim();
+  /** Net assets EOY — `assetsBands` (comma) OR legacy `assetsBand` (aligned with app `lib/assets-band.ts`). */
+  const assetsBandsRaw = (url.searchParams.get("assetsBands") ?? "").trim();
+  const assetsBandLegacy = (url.searchParams.get("assetsBand") ?? "").trim();
+  const assetsParts = [
+    ...new Set(
+      [
+        ...(assetsBandsRaw ? assetsBandsRaw.split(",") : []),
+        ...(assetsBandLegacy && assetsBandLegacy !== "all" ? [assetsBandLegacy] : []),
+      ]
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
   let assetsSql = "";
   const assetsBinds: number[] = [];
-  if (assetsParam === "0_10k") {
-    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
-    assetsBinds.push(0, 10_000);
-  } else if (assetsParam === "10k_50k") {
-    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
-    assetsBinds.push(10_000, 50_000);
-  } else if (assetsParam === "50k_100k") {
-    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
-    assetsBinds.push(50_000, 100_000);
-  } else if (assetsParam === "100k_500k") {
-    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
-    assetsBinds.push(100_000, 500_000);
-  } else if (assetsParam === "500k_1m") {
-    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? AND COALESCE(r.net_assets_eoy_amt, 0) < ? `;
-    assetsBinds.push(500_000, 1_000_000);
-  } else if (assetsParam === "1m_plus") {
-    assetsSql = ` AND COALESCE(r.net_assets_eoy_amt, 0) >= ? `;
-    assetsBinds.push(1_000_000);
+  if (assetsParts.length > 0) {
+    const naCol = `COALESCE(r.net_assets_eoy_amt, 0)`;
+    const clauses: string[] = [];
+    for (const p of assetsParts) {
+      if (p === "0_10k") {
+        clauses.push(`(${naCol} >= ? AND ${naCol} < ?)`);
+        assetsBinds.push(0, 10_000);
+      } else if (p === "10k_50k") {
+        clauses.push(`(${naCol} >= ? AND ${naCol} < ?)`);
+        assetsBinds.push(10_000, 50_000);
+      } else if (p === "50k_100k") {
+        clauses.push(`(${naCol} >= ? AND ${naCol} < ?)`);
+        assetsBinds.push(50_000, 100_000);
+      } else if (p === "100k_500k") {
+        clauses.push(`(${naCol} >= ? AND ${naCol} < ?)`);
+        assetsBinds.push(100_000, 500_000);
+      } else if (p === "500k_1m") {
+        clauses.push(`(${naCol} >= ? AND ${naCol} < ?)`);
+        assetsBinds.push(500_000, 1_000_000);
+      } else if (p === "1m_plus") {
+        clauses.push(`(${naCol} >= ?)`);
+        assetsBinds.push(1_000_000);
+      }
+    }
+    if (clauses.length > 0) {
+      assetsSql = ` AND (${clauses.join(" OR ")}) `;
+    }
   }
 
-  /** Reserve coverage (months) — aligned with app `lib/reserve-band.ts` / `ScreenerRow.reserveMonths`. */
+  /** Reserve coverage (months) — `reserveBands` (comma) OR legacy `reserveBand`. */
   const reserveMonthsExpr = `(CASE WHEN COALESCE(r.cy_total_expenses_amt, 0) > 0 THEN (CAST(COALESCE(r.net_assets_eoy_amt, 0) AS REAL) / r.cy_total_expenses_amt) * 12 ELSE 0 END)`;
-  const reserveParam = (url.searchParams.get("reserveBand") ?? "").trim();
+  const reserveBandsRaw = (url.searchParams.get("reserveBands") ?? "").trim();
+  const reserveBandLegacy = (url.searchParams.get("reserveBand") ?? "").trim().toLowerCase();
+  const reserveParts = [
+    ...new Set(
+      [
+        ...(reserveBandsRaw ? reserveBandsRaw.split(",").map((s) => s.trim().toLowerCase()) : []),
+        ...(reserveBandLegacy && reserveBandLegacy !== "all" ? [reserveBandLegacy] : []),
+      ].filter(Boolean),
+    ),
+  ];
   let reserveSql = "";
   const reserveBinds: number[] = [];
-  if (reserveParam === "m0_3") {
-    reserveSql = ` AND ${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ? `;
-    reserveBinds.push(0, 3);
-  } else if (reserveParam === "m3_6") {
-    reserveSql = ` AND ${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ? `;
-    reserveBinds.push(3, 6);
-  } else if (reserveParam === "m6_12") {
-    reserveSql = ` AND ${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ? `;
-    reserveBinds.push(6, 12);
-  } else if (reserveParam === "m12_24") {
-    reserveSql = ` AND ${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ? `;
-    reserveBinds.push(12, 24);
-  } else if (reserveParam === "m24p") {
-    reserveSql = ` AND ${reserveMonthsExpr} >= ? `;
-    reserveBinds.push(24);
+  if (reserveParts.length > 0) {
+    const clauses: string[] = [];
+    for (const p of reserveParts) {
+      if (p === "m0_3") {
+        clauses.push(`(${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ?)`);
+        reserveBinds.push(0, 3);
+      } else if (p === "m3_6") {
+        clauses.push(`(${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ?)`);
+        reserveBinds.push(3, 6);
+      } else if (p === "m6_12") {
+        clauses.push(`(${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ?)`);
+        reserveBinds.push(6, 12);
+      } else if (p === "m12_24") {
+        clauses.push(`(${reserveMonthsExpr} >= ? AND ${reserveMonthsExpr} < ?)`);
+        reserveBinds.push(12, 24);
+      } else if (p === "m24p") {
+        clauses.push(`(${reserveMonthsExpr} >= ?)`);
+        reserveBinds.push(24);
+      }
+    }
+    if (clauses.length > 0) {
+      reserveSql = ` AND (${clauses.join(" OR ")}) `;
+    }
   }
 
-  /** Optional `employeeBand` / `volunteerBand`: `0_1`, `1_10`, `10_50`, `50_100`, `100p` (aligned with app `portfolio-toolbar-bands`). */
-  const countBandSql = (
-    paramName: "employeeBand" | "volunteerBand",
+  /** `employeeBands` / `volunteerBands` (comma) OR legacy single param — OR combined. */
+  const countBandSqlMulti = (
+    pluralName: string,
+    legacyName: string,
     column: "total_employee_cnt" | "total_volunteers_cnt",
   ): { sql: string; binds: number[] } => {
-    const raw = (url.searchParams.get(paramName) ?? "").trim();
-    if (!raw || raw === "all") return { sql: "", binds: [] };
+    const rawPlural = (url.searchParams.get(pluralName) ?? "").trim();
+    const rawLegacy = (url.searchParams.get(legacyName) ?? "").trim();
+    const parts = [
+      ...new Set(
+        [
+          ...(rawPlural ? rawPlural.split(",") : []),
+          ...(rawLegacy && rawLegacy !== "all" ? [rawLegacy] : []),
+        ]
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (parts.length === 0) return { sql: "", binds: [] };
     const n = `COALESCE(r.${column}, 0)`;
-    switch (raw) {
-      case "0_1":
-        return { sql: ` AND ${n} >= ? AND ${n} <= ? `, binds: [0, 1] };
-      case "1_10":
-        return { sql: ` AND ${n} >= ? AND ${n} <= ? `, binds: [1, 10] };
-      case "10_50":
-        return { sql: ` AND ${n} >= ? AND ${n} <= ? `, binds: [10, 50] };
-      case "50_100":
-        return { sql: ` AND ${n} >= ? AND ${n} <= ? `, binds: [50, 100] };
-      case "100p":
-        return { sql: ` AND ${n} >= ? `, binds: [100] };
-      default:
-        return { sql: "", binds: [] };
+    const clauses: string[] = [];
+    const binds: number[] = [];
+    for (const raw of parts) {
+      switch (raw) {
+        case "0_1":
+          clauses.push(`(${n} >= ? AND ${n} <= ?)`);
+          binds.push(0, 1);
+          break;
+        case "1_10":
+          clauses.push(`(${n} >= ? AND ${n} <= ?)`);
+          binds.push(1, 10);
+          break;
+        case "10_50":
+          clauses.push(`(${n} >= ? AND ${n} <= ?)`);
+          binds.push(10, 50);
+          break;
+        case "50_100":
+          clauses.push(`(${n} >= ? AND ${n} <= ?)`);
+          binds.push(50, 100);
+          break;
+        case "100p":
+          clauses.push(`(${n} >= ?)`);
+          binds.push(100);
+          break;
+        default:
+          break;
+      }
     }
+    if (clauses.length === 0) return { sql: "", binds: [] };
+    return { sql: ` AND (${clauses.join(" OR ")}) `, binds };
   };
 
-  const empF = countBandSql("employeeBand", "total_employee_cnt");
-  const volF = countBandSql("volunteerBand", "total_volunteers_cnt");
+  const empF = countBandSqlMulti("employeeBands", "employeeBand", "total_employee_cnt");
+  const volF = countBandSqlMulti("volunteerBands", "volunteerBand", "total_volunteers_cnt");
 
-  /** Optional `boardBand`: `0_3`, `4`, `5`, `6`, `7`, `8p` (aligned with app `lib/board-band.ts`). */
-  const boardParam = (url.searchParams.get("boardBand") ?? "").trim();
-  const boardCntExpr = `COALESCE(r.governing_body_voting_cnt, r.voting_members_governing_cnt, 0)`;
+  /** Optional `boardBands` (comma-separated) or legacy `boardBand`: `0_3`, `4`, … `8p` — OR combined (aligned with app `lib/board-band.ts`). */
+  const boardBandsRaw = (url.searchParams.get("boardBands") ?? "").trim();
+  const boardParamLegacy = (url.searchParams.get("boardBand") ?? "").trim();
+  const boardBandParts = [
+    ...new Set(
+      (boardBandsRaw
+        ? boardBandsRaw.split(",")
+        : boardParamLegacy
+          ? [boardParamLegacy]
+          : []
+      )
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
+  /** Part VI: prefer governing-body voting count; fall back to independent-member counts when totals are omitted in XML. */
+  const boardCntExpr = `COALESCE(r.governing_body_voting_cnt, r.voting_members_governing_cnt, r.voting_members_independent_cnt, r.independent_voting_member_cnt, 0)`;
   let boardSql = "";
   const boardBinds: number[] = [];
-  if (boardParam === "0_3") {
-    boardSql = ` AND ${boardCntExpr} >= ? AND ${boardCntExpr} <= ? `;
-    boardBinds.push(0, 3);
-  } else if (boardParam === "4") {
-    boardSql = ` AND ${boardCntExpr} = ? `;
-    boardBinds.push(4);
-  } else if (boardParam === "5") {
-    boardSql = ` AND ${boardCntExpr} = ? `;
-    boardBinds.push(5);
-  } else if (boardParam === "6") {
-    boardSql = ` AND ${boardCntExpr} = ? `;
-    boardBinds.push(6);
-  } else if (boardParam === "7") {
-    boardSql = ` AND ${boardCntExpr} = ? `;
-    boardBinds.push(7);
-  } else if (boardParam === "8p") {
-    boardSql = ` AND ${boardCntExpr} >= ? `;
-    boardBinds.push(8);
+  if (boardBandParts.length > 0) {
+    const clauses: string[] = [];
+    for (const p of boardBandParts) {
+      if (p === "0_3") {
+        clauses.push(`(${boardCntExpr} >= ? AND ${boardCntExpr} <= ?)`);
+        boardBinds.push(0, 3);
+      } else if (p === "4") {
+        clauses.push(`(${boardCntExpr} = ?)`);
+        boardBinds.push(4);
+      } else if (p === "5") {
+        clauses.push(`(${boardCntExpr} = ?)`);
+        boardBinds.push(5);
+      } else if (p === "6") {
+        clauses.push(`(${boardCntExpr} = ?)`);
+        boardBinds.push(6);
+      } else if (p === "7") {
+        clauses.push(`(${boardCntExpr} = ?)`);
+        boardBinds.push(7);
+      } else if (p === "8p") {
+        clauses.push(`(${boardCntExpr} >= ?)`);
+        boardBinds.push(8);
+      }
+    }
+    if (clauses.length > 0) {
+      boardSql = ` AND (${clauses.join(" OR ")}) `;
+    }
   }
 
-  const stateRaw = (url.searchParams.get("state") ?? "").trim().toUpperCase();
+  /** `states` (comma USPS) OR legacy `state` — OR combined. */
+  const statesRaw = (url.searchParams.get("states") ?? "").trim();
+  const stateLegacy = (url.searchParams.get("state") ?? "").trim().toUpperCase();
+  const stateParts = [
+    ...new Set(
+      [
+        ...(statesRaw
+          ? statesRaw
+              .split(",")
+              .map((s) => s.trim().toUpperCase())
+              .filter((s) => s.length === 2 && /^[A-Z]{2}$/.test(s))
+          : []),
+        ...(stateLegacy.length === 2 && /^[A-Z]{2}$/.test(stateLegacy) ? [stateLegacy] : []),
+      ],
+    ),
+  ];
   let stateSql = "";
   const stateBinds: string[] = [];
-  if (stateRaw.length === 2 && /^[A-Z]{2}$/.test(stateRaw)) {
-    stateSql = ` AND UPPER(TRIM(r.filer_state)) = ? `;
-    stateBinds.push(stateRaw);
+  if (stateParts.length > 0) {
+    stateSql = ` AND UPPER(TRIM(r.filer_state)) IN (${stateParts.map(() => "?").join(",")}) `;
+    stateBinds.push(...stateParts);
   }
 
   try {
@@ -1036,9 +1163,12 @@ async function handleIrs990Browse(request: Request, env: Env): Promise<Response>
               r.cy_total_revenue_amt, r.py_total_revenue_amt, r.cy_total_expenses_amt, r.py_total_expenses_amt,
               r.cy_rev_less_expenses_amt, r.net_assets_eoy_amt, r.net_assets_boy_amt,
               r.cy_contributions_grants_amt, r.cy_program_service_revenue_amt, r.cy_investment_income_amt, r.cy_other_revenue_amt,
-              r.total_program_service_expenses_amt,
+              r.total_program_service_expenses_amt, r.cy_total_management_and_general_expenses_amt, r.cy_total_fundraising_expense_amt,
               r.formation_yr, r.total_employee_cnt, r.total_volunteers_cnt,
+              COALESCE(r.governing_body_voting_cnt, r.voting_members_governing_cnt, r.voting_members_independent_cnt, r.independent_voting_member_cnt) AS board_members_cnt,
+              r.governing_body_voting_cnt, r.voting_members_governing_cnt, r.voting_members_independent_cnt, r.independent_voting_member_cnt,
               r.tax_yr, r.organization_501c3_ind, r.website_txt,
+              NULLIF(TRIM(r.org_phone), '') AS org_phone,
               r.mission_desc, r.activity_mission_desc,
               lc.logo_domain AS logo_cached_domain
        FROM irs990_xml_returns r
@@ -1092,6 +1222,103 @@ async function handleIrs990Browse(request: Request, env: Env): Promise<Response>
       hasMore,
       nextOffset: offset + pageRows.length,
       random,
+      source: "irs990_xml_returns",
+    });
+  } catch (e) {
+    return json(
+      {
+        error: "irs990_xml_returns not available — run schema-irs990-xml.sql and TEOS ingest (see IRS-990-XML-INGEST.md).",
+        details: (e as Error).message,
+      },
+      503,
+    );
+  }
+}
+
+/** Same column list as `/api/irs990-browse` (single row). */
+const IRS990_BROWSE_ROW_SELECT = `SELECT r.return_pk, r.ein, r.org_legal_name AS name, r.filer_city AS city, r.filer_state AS state,
+              r.cy_total_revenue_amt, r.py_total_revenue_amt, r.cy_total_expenses_amt, r.py_total_expenses_amt,
+              r.cy_rev_less_expenses_amt, r.net_assets_eoy_amt, r.net_assets_boy_amt,
+              r.cy_contributions_grants_amt, r.cy_program_service_revenue_amt, r.cy_investment_income_amt, r.cy_other_revenue_amt,
+              r.total_program_service_expenses_amt, r.cy_total_management_and_general_expenses_amt, r.cy_total_fundraising_expense_amt,
+              r.formation_yr, r.total_employee_cnt, r.total_volunteers_cnt,
+              COALESCE(r.governing_body_voting_cnt, r.voting_members_governing_cnt, r.voting_members_independent_cnt, r.independent_voting_member_cnt) AS board_members_cnt,
+              r.governing_body_voting_cnt, r.voting_members_governing_cnt, r.voting_members_independent_cnt, r.independent_voting_member_cnt,
+              r.tax_yr, r.organization_501c3_ind, r.website_txt,
+              NULLIF(TRIM(r.org_phone), '') AS org_phone,
+              r.mission_desc, r.activity_mission_desc,
+              lc.logo_domain AS logo_cached_domain`;
+
+/**
+ * GET /api/irs990-row?orgId=irs990-<return_pk> | irs990-ein-<9 digits>
+ * One TEOS row (latest filing per EIN when resolving by EIN), same shape as browse.
+ */
+async function handleIrs990RowByOrgId(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const orgId = (url.searchParams.get("orgId") ?? "").trim();
+  if (!orgId) return json({ error: "Missing orgId" }, 400);
+
+  let returnPk: string | undefined;
+  let ein: string | undefined;
+  if (orgId.startsWith("irs990-ein-")) {
+    const d = orgId.slice("irs990-ein-".length).replace(/\D/g, "").slice(0, 9);
+    if (d.length === 9) ein = d;
+  } else if (orgId.startsWith("irs990-")) {
+    const rest = orgId.slice("irs990-".length);
+    if (/^\d+$/.test(rest)) returnPk = rest;
+  }
+  if (!returnPk && !ein) return json({ error: "Invalid orgId" }, 400);
+
+  const logoPk = env.LOGO_DEV_PUBLISHABLE_KEY?.trim();
+
+  try {
+    let stmt: string;
+    const binds: unknown[] = [];
+    if (returnPk) {
+      stmt = `${IRS990_BROWSE_ROW_SELECT}
+       FROM irs990_xml_returns r
+       LEFT JOIN org_logo_cache lc ON lc.ein = r.ein
+       WHERE r.return_pk = ?
+       LIMIT 1`;
+      binds.push(returnPk);
+    } else {
+      stmt = `${IRS990_BROWSE_ROW_SELECT}
+       FROM irs990_xml_returns r
+       INNER JOIN (
+         SELECT ein, MAX(COALESCE(tax_yr, 0)) AS max_ty
+         FROM irs990_xml_returns
+         GROUP BY ein
+       ) latest ON r.ein = latest.ein AND COALESCE(r.tax_yr, 0) = latest.max_ty
+       LEFT JOIN org_logo_cache lc ON lc.ein = r.ein
+       WHERE r.ein = ?
+       LIMIT 1`;
+      binds.push(ein!);
+    }
+
+    const rows = await env.DB.prepare(stmt).bind(...binds).all();
+    const list = (rows.results ?? []) as Record<string, unknown>[];
+    if (list.length === 0) {
+      return json({ rows: [], source: "irs990_xml_returns" }, 404);
+    }
+
+    const pageRows = list;
+    if (logoPk) {
+      for (const row of pageRows) {
+        const r = row as Record<string, unknown>;
+        const resolved = resolveLogoDevImageUrl(
+          String(r.name ?? ""),
+          String(r.website_txt ?? ""),
+          r.logo_cached_domain != null ? String(r.logo_cached_domain) : undefined,
+          logoPk,
+          { size: 72, retina: true },
+        );
+        if (resolved) r.logo_image_url = resolved;
+      }
+    }
+
+    return json({
+      count: pageRows.length,
+      rows: pageRows,
       source: "irs990_xml_returns",
     });
   } catch (e) {

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
+import { getOrgContextForOutgoingUserMessage } from "@/lib/org-context-for-message"
+import { mergeNonprofitSearchCards } from "@/lib/nonprofit-chat-cards"
 import type { ChatMessage } from "../chat/types"
 import { isHoverCapable } from "../chat/hover"
 import { formatAssistantError, streamGeminiReply } from "../chat/geminiFetch"
@@ -29,9 +31,11 @@ function newId(prefix: string): string {
 type Props = {
     leftInset: number
     isMobile: boolean
+    /** Match home: pad composer when org detail rail is open (`?org=`). */
+    rightInset?: number
 }
 
-export function ChatSessionPage({ leftInset, isMobile }: Props) {
+export function ChatSessionPage({ leftInset, isMobile, rightInset = 0 }: Props) {
     const router = useRouter()
     const params = useParams()
     const chatId = typeof params.chatId === "string" ? params.chatId : ""
@@ -100,15 +104,33 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
                 { id: assistantId, role: "assistant", text: "" },
             ])
             try {
-                await streamGeminiReply(transcript, (delta) => {
-                    setMessages((prev) =>
-                        prev.map((m) =>
-                            m.id === assistantId
-                                ? { ...m, text: m.text + delta }
-                                : m,
-                        ),
-                    )
-                })
+                await streamGeminiReply(
+                    transcript,
+                    (delta) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? { ...m, text: m.text + delta }
+                                    : m,
+                            ),
+                        )
+                    },
+                    (cards) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? {
+                                          ...m,
+                                          nonprofitCards: mergeNonprofitSearchCards(
+                                              m.nonprofitCards ?? [],
+                                              cards,
+                                          ),
+                                      }
+                                    : m,
+                            ),
+                        )
+                    },
+                )
                 setMessages((prev) => {
                     saveChatMessages(chatId, prev)
                     return prev
@@ -139,10 +161,12 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
             const full = (text.trim() + attachmentNote).trim()
             if (!full) return
 
+            const orgContext = getOrgContextForOutgoingUserMessage()
             const userMsg: ChatMessage = {
                 id: newId("u"),
                 role: "user",
                 text: full,
+                ...(orgContext ? { orgContext } : {}),
             }
             const withUser = [...messages, userMsg]
             setMessages(withUser)
@@ -161,6 +185,21 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
                             prev.map((m) =>
                                 m.id === assistantId
                                     ? { ...m, text: m.text + delta }
+                                    : m,
+                            ),
+                        )
+                    },
+                    (cards) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? {
+                                          ...m,
+                                          nonprofitCards: mergeNonprofitSearchCards(
+                                              m.nonprofitCards ?? [],
+                                              cards,
+                                          ),
+                                      }
                                     : m,
                             ),
                         )
@@ -296,6 +335,7 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
                         previousMsg={i > 0 ? messages[i - 1] : undefined}
                         copiedMessageId={copiedId}
                         onCopy={onCopyMessage}
+                        chatReturnPath={chatId ? `/c/${chatId}` : undefined}
                         isStreamingAssistant={
                             msg.role === "assistant" &&
                             streamingAssistantId !== null &&
@@ -306,6 +346,7 @@ export function ChatSessionPage({ leftInset, isMobile }: Props) {
             </div>
             <ChatBar
                 leftInset={leftInset}
+                rightInset={rightInset}
                 onSend={onSend}
                 isSending={sending}
             />

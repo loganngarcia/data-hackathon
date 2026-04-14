@@ -1,7 +1,10 @@
 "use client"
 
 import type { CSSProperties } from "react"
+import Link from "next/link"
 import { memo, useCallback, useEffect, useRef, useState } from "react"
+import { OrgLogoAvatar } from "@/features/tipping-point/org-logo-avatar"
+import "@/features/tipping-point/tipping-point-dashboard.css"
 import { renderSimpleMarkdown } from "../chat/chatMarkdown"
 import "../chat/chat-markdown.css"
 import { isHoverCapable } from "../chat/hover"
@@ -11,6 +14,7 @@ import {
 } from "../chat/shareAiMessageImage"
 import { stripMarkdown } from "../chat/stripMarkdown"
 import type { ChatMessage } from "../chat/types"
+import { ChatNonprofitResultCards } from "./ChatNonprofitResultCards"
 
 const actionBtn: CSSProperties = {
     width: 28,
@@ -31,6 +35,8 @@ type Props = {
     onCopy: (messageId: string) => void
     /** Hide share/copy/dislike until the streamed reply has finished. */
     isStreamingAssistant?: boolean
+    /** Deep links from nonprofit cards include `returnChat` so Tipping Point Back returns here. */
+    chatReturnPath?: string
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -40,6 +46,7 @@ export const MessageBubble = memo(function MessageBubble({
     copiedMessageId,
     onCopy,
     isStreamingAssistant = false,
+    chatReturnPath,
 }: Props) {
     const baseTextStyle: CSSProperties = {
         fontSize: 16,
@@ -102,6 +109,21 @@ export const MessageBubble = memo(function MessageBubble({
     }
 
     if (msg.role === "user") {
+        const orgCtx = msg.orgContext
+        let chipLabel = ""
+        let orgChipHref: string | null = null
+        if (orgCtx) {
+            const loc = [orgCtx.city, orgCtx.state].filter(Boolean).join(", ")
+            chipLabel = loc ? `${orgCtx.name} · ${loc}` : orgCtx.name
+            const q = new URLSearchParams()
+            q.set("org", orgCtx.orgId)
+            if (chatReturnPath?.startsWith("/c/")) {
+                q.set("returnChat", chatReturnPath)
+            }
+            const s = q.toString()
+            orgChipHref = s ? `/?${s}` : "/"
+        }
+
         return (
             <div
                 id={id}
@@ -127,6 +149,57 @@ export const MessageBubble = memo(function MessageBubble({
                     onMouseEnter={onUserMouseEnter}
                     onMouseLeave={onUserMouseLeave}
                 >
+                    {orgCtx && orgChipHref ? (
+                        <Link
+                            href={orgChipHref}
+                            scroll={false}
+                            className="chat-user-org-context-chip"
+                            title="Open nonprofit profile"
+                            style={{
+                                height: 40,
+                                paddingLeft: 16,
+                                paddingRight: 16,
+                                background: "var(--surface-highlight)",
+                                borderRadius: 28,
+                                alignItems: "center",
+                                gap: 8,
+                                display: "inline-flex",
+                                width: "max-content",
+                                maxWidth: "100%",
+                                minWidth: 0,
+                                boxSizing: "border-box",
+                                alignSelf: "flex-end",
+                                textDecoration: "none",
+                                color: "inherit",
+                            }}
+                        >
+                            <span className="chat-user-org-context-chip-avatar">
+                                <OrgLogoAvatar
+                                    organizationName={orgCtx.name}
+                                    websiteDomain={orgCtx.websiteDomain}
+                                    cachedLogoDomain={orgCtx.logoDomain}
+                                    logoImageUrl={orgCtx.logoImageUrl}
+                                />
+                            </span>
+                            <span
+                                style={{
+                                    color: "var(--text-primary)",
+                                    fontSize: 15,
+                                    fontFamily: "var(--font-ui)",
+                                    fontWeight: 400,
+                                    lineHeight: "22.5px",
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    minWidth: 0,
+                                    flex: "1 1 0%",
+                                }}
+                            >
+                                {chipLabel}
+                            </span>
+                        </Link>
+                    ) : null}
+
                     {msg.text ? (
                         <div
                             style={{
@@ -257,6 +330,20 @@ export const MessageBubble = memo(function MessageBubble({
                             baseTextStyle,
                             linkStyle
                         )}
+                    </div>
+                ) : null}
+                {msg.nonprofitCards && msg.nonprofitCards.length > 0 ? (
+                    <div
+                        style={{
+                            alignSelf: "stretch",
+                            width: "100%",
+                            marginTop: msg.text.trim() ? 12 : 0,
+                        }}
+                    >
+                        <ChatNonprofitResultCards
+                            cards={msg.nonprofitCards}
+                            chatReturnPath={chatReturnPath}
+                        />
                     </div>
                 ) : null}
 

@@ -4,15 +4,24 @@ import { useMemo } from "react";
 import {
   BOARD_BAND_IDS,
   BOARD_BAND_MENU_LABELS,
+  formatBoardBandSelectionChip,
+  toggleBoardBandSelection,
   type BoardBandId,
+  type BoardBandSelection,
 } from "@/lib/board-band";
 import {
   COUNT_BAND_IDS,
   COUNT_BAND_MENU_LABELS,
-  type CountBandId,
+  formatCountBandSelectionChip,
+  formatStateSelectionChip,
+  toggleCountBandSelection,
+  toggleStateAbbrevSelection,
   US_STATE_OPTIONS,
+  type CountBandId,
+  type CountBandSelection,
+  type StateAbbrevSelection,
 } from "@/lib/portfolio-toolbar-bands";
-import { PortfolioToolbarDropdown } from "./portfolio-toolbar-dropdown";
+import { PortfolioToolbarMultiDropdown } from "./portfolio-toolbar-dropdown";
 
 function countBandOptions(): { id: CountBandId; label: string }[] {
   const o: { id: CountBandId; label: string }[] = [{ id: "all", label: "All" }];
@@ -24,8 +33,8 @@ function countBandOptions(): { id: CountBandId; label: string }[] {
 }
 
 type CountProps = {
-  value: CountBandId;
-  onChange: (v: CountBandId) => void;
+  value: CountBandSelection;
+  onChange: (v: CountBandSelection) => void;
   kind: "employees" | "volunteers";
 };
 
@@ -33,21 +42,17 @@ function PortfolioCountBandFilter(props: CountProps) {
   const { value, onChange, kind } = props;
   const options = useMemo(() => countBandOptions(), []);
   const triggerDefault = kind === "employees" ? "Employees" : "Volunteers";
-  const noun = kind === "employees" ? "employees" : "volunteers";
   const prefix = kind === "employees" ? "Employees filter" : "Volunteers filter";
-  const bandLabel =
-    value === "all" ? null : COUNT_BAND_MENU_LABELS[value as Exclude<CountBandId, "all">];
-  /** Chip preview: e.g. `100+ employees`, `0–1 volunteers`; unchanged when "all" (category name only). */
-  const triggerLabel = value === "all" ? triggerDefault : `${bandLabel} ${noun}`;
-  const ariaDetail = value === "all" ? "all ranges" : `${bandLabel} ${noun}`;
+  const triggerLabel = formatCountBandSelectionChip(value, kind);
+  const ariaDetail = value.length === 0 ? "all ranges" : triggerLabel;
 
   return (
-    <PortfolioToolbarDropdown
+    <PortfolioToolbarMultiDropdown
       wrapClassName="tp-portfolio-toolbar-select-wrap tp-portfolio-count-band-select-wrap"
       options={options}
-      value={value}
-      onChange={onChange}
-      triggerLabel={triggerLabel}
+      selectedIds={value}
+      onPick={(id) => onChange(toggleCountBandSelection(value, id as CountBandId))}
+      triggerLabel={value.length === 0 ? triggerDefault : triggerLabel}
       ariaLabelPrefix={prefix}
       ariaFilterDetail={ariaDetail}
     />
@@ -72,25 +77,24 @@ function boardBandOptions(): { id: BoardBandId; label: string }[] {
 }
 
 type BoardProps = {
-  value: BoardBandId;
-  onChange: (v: BoardBandId) => void;
+  /** Empty = all board sizes (no filter). */
+  value: BoardBandSelection;
+  onChange: (v: BoardBandSelection) => void;
 };
 
-/** Governing-body size from Form 990 (Worker: COALESCE of two Part VI counts). */
+/** Governing-body size from Form 990 (Worker: COALESCE of two Part VI counts). Multi-select; adding fills gaps along menu order. */
 export function PortfolioBoardFilter(props: BoardProps) {
   const { value, onChange } = props;
   const options = useMemo(() => boardBandOptions(), []);
-  const triggerLabel =
-    value === "all" ? "Board" : BOARD_BAND_MENU_LABELS[value as Exclude<BoardBandId, "all">];
-  const ariaDetail =
-    value === "all" ? "all sizes" : BOARD_BAND_MENU_LABELS[value as Exclude<BoardBandId, "all">];
+  const triggerLabel = formatBoardBandSelectionChip(value);
+  const ariaDetail = value.length === 0 ? "all sizes" : triggerLabel;
 
   return (
-    <PortfolioToolbarDropdown
+    <PortfolioToolbarMultiDropdown
       wrapClassName="tp-portfolio-toolbar-select-wrap tp-portfolio-board-select-wrap"
       options={options}
-      value={value}
-      onChange={onChange}
+      selectedIds={value}
+      onPick={(id) => onChange(toggleBoardBandSelection(value, id as BoardBandId))}
       triggerLabel={triggerLabel}
       ariaLabelPrefix="Board filter"
       ariaFilterDetail={ariaDetail}
@@ -99,11 +103,11 @@ export function PortfolioBoardFilter(props: BoardProps) {
 }
 
 type StateProps = {
-  value: string;
-  onChange: (stateAbbrev: string) => void;
+  value: StateAbbrevSelection;
+  onChange: (v: StateAbbrevSelection) => void;
 };
 
-/** `value` is `"all"` or USPS code (`CA`, `NY`, …). */
+/** Multi-select US states (OR). Empty = all states. */
 export function PortfolioStateFilter(props: StateProps) {
   const { value, onChange } = props;
   const options = useMemo(() => {
@@ -114,19 +118,15 @@ export function PortfolioStateFilter(props: StateProps) {
     return o;
   }, []);
 
-  const triggerLabel =
-    value === "all"
-      ? "State"
-      : US_STATE_OPTIONS.find((s) => s.abbrev === value)?.name ?? value;
-  const ariaDetail =
-    value === "all" ? "all states" : (US_STATE_OPTIONS.find((s) => s.abbrev === value)?.name ?? value);
+  const triggerLabel = formatStateSelectionChip(value);
+  const ariaDetail = value.length === 0 ? "all states" : `${value.length} state${value.length === 1 ? "" : "s"}`;
 
   return (
-    <PortfolioToolbarDropdown
+    <PortfolioToolbarMultiDropdown
       wrapClassName="tp-portfolio-toolbar-select-wrap tp-portfolio-state-select-wrap"
       options={options}
-      value={value}
-      onChange={onChange}
+      selectedIds={value}
+      onPick={(id) => onChange(toggleStateAbbrevSelection(value, id))}
       triggerLabel={triggerLabel}
       ariaLabelPrefix="State filter"
       ariaFilterDetail={ariaDetail}

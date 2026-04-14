@@ -14,6 +14,8 @@ export interface ScreenerRowContract {
   staffCount: number;
   riskBand: RiskBand;
   screenScore: number;
+  /** Optional: TEOS governing-body voting members (990 Part VI). */
+  boardMemberCount?: number;
 }
 
 export interface OrgDetailContract {
@@ -28,7 +30,12 @@ export interface OrgDetailContract {
   revenueMix: Array<{ label: string; value: number; tone: "accent" | "muted" | "warm" }>;
   topSignals: string[];
   watchouts: string[];
-  peerBenchmarks: Array<{ label: string; orgValue: number; peerMedian: number }>;
+  peerBenchmarks: Array<{
+    label: string;
+    format: "reserve_months" | "percent" | "ratio" | "usd";
+    orgValue: number | null;
+    peerMedian: number | null;
+  }>;
   narrative: string;
 }
 

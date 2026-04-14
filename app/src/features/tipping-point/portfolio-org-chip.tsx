@@ -9,6 +9,10 @@ import {
   useState,
 } from "react";
 import type { ScreenerRow } from "@/lib/types";
+import {
+  clampPortfolioFloatingMenuRect,
+  estimatePortfolioMenuHeight,
+} from "./portfolio-floating-menu-rect";
 
 /** Chevron matching LeftSidebar “Your chats” (expanded = down). */
 function ChevronDown({ open }: { open: boolean }) {
@@ -91,12 +95,10 @@ export function PortfolioOrgChip({
     const el = chipRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setFixedPos({
-      top: r.bottom + 4,
-      left: r.left,
-      width: Math.max(r.width, 248),
-    });
-  }, []);
+    const rawW = Math.max(r.width, 248);
+    const estH = estimatePortfolioMenuHeight(rows.length, undefined);
+    setFixedPos(clampPortfolioFloatingMenuRect(r, rawW, estH));
+  }, [rows.length]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
