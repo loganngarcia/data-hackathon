@@ -116,3 +116,18 @@ class PeerComparison(BaseModel):
     target_score: float | None
     peers: list[PeerOrg]
     peer_avg_score: float | None
+
+
+class HiddenGem(BaseModel):
+    ein: str
+    org_name: str | None
+    state: str | None
+    mission_description: str | None
+    composite_score: float | None
+    tier: str | None
+    latest_total_revenue: int | None
+    latest_net_assets: int | None
+    gem_score: float
+    gem_reason: str
+    program_efficiency: float | None
+    employee_count: int | None

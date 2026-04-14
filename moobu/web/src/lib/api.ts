@@ -1,5 +1,6 @@
 import type {
   AtRiskOrg,
+  HiddenGem,
   NonprofitProfile,
   OverviewStats,
   PaginatedNonprofits,
@@ -49,4 +50,8 @@ export function fetchOverview(): Promise<OverviewStats> {
 
 export function fetchPeers(ein: string): Promise<PeerComparison> {
   return fetchJSON(`/api/nonprofit/${ein}/peers`);
+}
+
+export function fetchHiddenGems(limit = 100): Promise<HiddenGem[]> {
+  return fetchJSON(`/api/hidden-gems?limit=${limit}`);
 }

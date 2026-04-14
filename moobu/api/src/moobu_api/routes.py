@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 from .db import query
 from .models import (
     AtRiskOrg,
+    HiddenGem,
     MetricBreakdown,
     NonprofitProfile,
     NonprofitSummary,
@@ -306,3 +307,119 @@ def get_peers(ein: str, limit: int = Query(10, ge=1, le=50)):
         peers=peers,
         peer_avg_score=round(peer_avg, 2) if peer_avg is not None else None,
     )
+
+
+@router.get("/hidden-gems", response_model=list[HiddenGem])
+def get_hidden_gems(limit: int = Query(100, ge=1, le=500)):
+    """Identify high-impact 'hidden gem' nonprofits that deliver disproportionate
+    community value relative to their budget."""
+
+    # Get the median revenue across all scored orgs
+    median_rev_row = query(
+        "SELECT MEDIAN(latest_total_revenue) FROM org_scores WHERE latest_total_revenue > 0"
+    ).fetchone()
+    median_revenue = median_rev_row[0] if median_rev_row and median_rev_row[0] else 1
+
+    rows = query(f"""
+        WITH gem_candidates AS (
+            SELECT
+                s.ein,
+                s.org_name,
+                s.state,
+                s.composite_score,
+                s.tier,
+                s.latest_total_revenue,
+                s.latest_net_assets,
+                s.program_expense_ratio,
+                s.surplus_deficit_consistency,
+                s.revenue_concentration_hhi,
+                s.revenue_growth_trend,
+                m.mission_description,
+                m.employee_count,
+                -- Normalized components (each 0-1 range)
+                CASE WHEN s.program_expense_ratio IS NOT NULL
+                     THEN LEAST(s.program_expense_ratio / 10.0, 1.0) ELSE 0 END AS prog_ratio_norm,
+                CASE WHEN s.surplus_deficit_consistency IS NOT NULL
+                     THEN LEAST(s.surplus_deficit_consistency / 10.0, 1.0) ELSE 0 END AS surplus_norm,
+                CASE WHEN s.revenue_concentration_hhi IS NOT NULL
+                     THEN LEAST(s.revenue_concentration_hhi / 10.0, 1.0) ELSE 0 END AS diversification_norm,
+                CASE WHEN s.revenue_growth_trend IS NOT NULL
+                     THEN LEAST(s.revenue_growth_trend / 10.0, 1.0) ELSE 0 END AS growth_norm,
+                CASE WHEN s.latest_total_revenue IS NOT NULL AND s.latest_total_revenue > 0
+                          AND s.latest_total_revenue < {int(median_revenue)}
+                     THEN 1.0
+                     WHEN s.latest_total_revenue IS NOT NULL AND s.latest_total_revenue > 0
+                          AND s.latest_total_revenue < {int(median_revenue * 2)}
+                     THEN 0.5
+                     ELSE 0.0 END AS small_size_bonus
+            FROM org_scores s
+            LEFT JOIN (
+                SELECT ein, mission_description, employee_count
+                FROM filings
+                WHERE mission_description IS NOT NULL
+                QUALIFY ROW_NUMBER() OVER (PARTITION BY ein ORDER BY tax_year DESC) = 1
+            ) m ON s.ein = m.ein
+            WHERE s.composite_score IS NOT NULL
+              AND s.program_expense_ratio IS NOT NULL
+              AND s.latest_total_revenue > 0
+        )
+        SELECT
+            ein, org_name, state, composite_score, tier,
+            latest_total_revenue, latest_net_assets,
+            program_expense_ratio, surplus_deficit_consistency,
+            revenue_concentration_hhi, revenue_growth_trend,
+            mission_description, employee_count,
+            small_size_bonus,
+            (prog_ratio_norm * 0.30
+             + surplus_norm * 0.20
+             + diversification_norm * 0.20
+             + growth_norm * 0.15
+             + small_size_bonus * 0.15) AS gem_score
+        FROM gem_candidates
+        ORDER BY gem_score DESC
+        LIMIT {limit}
+    """).fetchall()
+
+    results = []
+    for r in rows:
+        (ein_val, org_name, state, composite_score, tier,
+         revenue, net_assets, program_ratio, surplus_consistency,
+         diversification, growth_trend, mission, emp_count,
+         size_bonus, gem_score) = r
+
+        # Build human-readable reason
+        reasons = []
+        if program_ratio is not None and program_ratio >= 7:
+            reasons.append(f"High mission spending ({program_ratio:.1f}/10)")
+        if size_bonus and size_bonus >= 0.5:
+            reasons.append("Strong metrics despite small budget")
+        if surplus_consistency is not None and surplus_consistency >= 7:
+            reasons.append(f"Consistent surpluses ({surplus_consistency:.1f}/10)")
+        if diversification is not None and diversification >= 7:
+            reasons.append("Well-diversified revenue")
+        if growth_trend is not None and growth_trend >= 7:
+            reasons.append("Strong revenue growth")
+        if composite_score is not None and composite_score >= 60:
+            reasons.append(f"Good resilience score ({composite_score:.1f})")
+
+        gem_reason = "; ".join(reasons) if reasons else "Balanced financial metrics relative to size"
+
+        # Convert program_expense_ratio (0-10 scale) to percentage for display
+        program_eff = (program_ratio * 10) if program_ratio is not None else None
+
+        results.append(HiddenGem(
+            ein=ein_val,
+            org_name=org_name,
+            state=state,
+            mission_description=mission,
+            composite_score=composite_score,
+            tier=tier,
+            latest_total_revenue=revenue,
+            latest_net_assets=net_assets,
+            gem_score=round(gem_score, 4) if gem_score else 0,
+            gem_reason=gem_reason,
+            program_efficiency=round(program_eff, 1) if program_eff is not None else None,
+            employee_count=emp_count,
+        ))
+
+    return results

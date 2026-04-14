@@ -31,6 +31,9 @@ export default function NavBar() {
           <Link href="/" className={linkClass("/")}>
             Portfolio X-Ray
           </Link>
+          <Link href="/hidden-gems" className={linkClass("/hidden-gems")}>
+            Hidden Gems
+          </Link>
           <Link href="/at-risk" className={linkClass("/at-risk")}>
             Risk Monitor
           </Link>

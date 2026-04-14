@@ -213,6 +213,26 @@ export default function OrgXRayReport() {
                   Website
                 </a>
               )}
+              <a
+                href={`https://projects.propublica.org/nonprofits/organizations/${profile.ein}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="detail-pill hover:bg-moobu-purple-light transition-colors"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+                ProPublica Profile
+              </a>
               <span className="detail-pill">EIN: {profile.ein}</span>
               <span className="detail-pill">
                 {profile.years_of_data} yrs data ({profile.confidence})
@@ -639,8 +659,24 @@ function FinancialSummaryTab({ profile }: { profile: NonprofitProfile }) {
               </ul>
             </div>
 
+            <div className="mt-3 pt-3 border-t border-blue-200">
+              <p className="font-semibold mb-1">How this helps Fairlight Advisors:</p>
+              <p>
+                This assessment helps financial advisors like Fairlight Advisors quickly identify which nonprofit clients need proactive support, enabling targeted intervention before financial crises occur. By surfacing objective, data-driven resilience metrics, advisors can prioritize outreach, tailor financial guidance, and demonstrate measurable impact to stakeholders.
+              </p>
+            </div>
+
             <p className="text-xs text-muted pt-1">
               Data source: IRS Form 990 public filings, analyzed across multiple tax years.
+              {" "}
+              <a
+                href={`https://projects.propublica.org/nonprofits/organizations/${profile.ein}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-moobu-blue hover:underline"
+              >
+                View full filing data on ProPublica
+              </a>
             </p>
           </div>
         )}

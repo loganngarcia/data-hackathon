@@ -111,4 +111,19 @@ export interface PeerComparison {
   peer_avg_score: number | null;
 }
 
+export interface HiddenGem {
+  ein: string;
+  org_name: string | null;
+  state: string | null;
+  mission_description: string | null;
+  composite_score: number | null;
+  tier: string | null;
+  latest_total_revenue: number | null;
+  latest_net_assets: number | null;
+  gem_score: number;
+  gem_reason: string;
+  program_efficiency: number | null;
+  employee_count: number | null;
+}
+
 export type Tier = "Thriving" | "Stable" | "Needs Support" | "Urgent";
