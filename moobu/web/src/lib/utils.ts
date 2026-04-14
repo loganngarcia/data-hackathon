@@ -8,6 +8,16 @@ export function formatCurrency(value: number | null | undefined): string {
   }).format(value);
 }
 
+export function formatFullCurrency(value: number | null | undefined): string {
+  if (value == null) return "N/A";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+  }).format(value);
+}
+
 export function formatNumber(value: number | null | undefined): string {
   if (value == null) return "N/A";
   return new Intl.NumberFormat("en-US", {
@@ -144,4 +154,75 @@ const METRIC_COLORS: Record<string, string> = {
 
 export function metricColor(metricKey: string): string {
   return METRIC_COLORS[metricKey] || "#6B7280";
+}
+
+// Returns green/yellow/red hex based on 0-10 score range
+export function metricScoreColor(value: number): string {
+  if (value >= 7) return "#10B981";
+  if (value >= 4) return "#F5A623";
+  return "#EF4444";
+}
+
+// Plain-English interpretation of each metric score
+const METRIC_INTERPRETATIONS: Record<string, [number, string][]> = {
+  revenue_concentration_hhi: [
+    [0, "Heavily concentrated -- most revenue from a single source"],
+    [3, "Moderately concentrated -- 2-3 primary revenue streams"],
+    [5, "Good diversification across revenue streams"],
+    [7, "Highly diversified -- revenue spread across 4+ sources"],
+  ],
+  operating_reserve_ratio: [
+    [0, "Critical -- less than 3 months of operating reserves"],
+    [3, "Below target -- 3-6 months of reserves"],
+    [5, "Adequate -- 6-9 months of reserves"],
+    [7, "Strong -- over 9 months of operating reserves"],
+  ],
+  revenue_growth_trend: [
+    [0, "Declining -- revenue has been shrinking"],
+    [3, "Flat -- minimal revenue growth"],
+    [5, "Moderate growth trajectory"],
+    [7, "Strong growth -- revenue increasing significantly"],
+  ],
+  expense_vs_revenue_growth: [
+    [0, "Expenses growing much faster than revenue"],
+    [3, "Expenses outpacing revenue slightly"],
+    [5, "Expenses roughly aligned with revenue"],
+    [7, "Revenue growing faster than expenses -- good cost control"],
+  ],
+  program_expense_ratio: [
+    [0, "Low mission spending -- significant overhead"],
+    [3, "Below average mission spending ratio"],
+    [5, "Good -- majority of spending goes to programs"],
+    [7, "Excellent -- high proportion of spending on mission"],
+  ],
+  revenue_volatility: [
+    [0, "Highly volatile -- unpredictable revenue"],
+    [3, "Moderate volatility in revenue"],
+    [5, "Relatively stable revenue"],
+    [7, "Very stable -- consistent revenue year to year"],
+  ],
+  net_asset_trend: [
+    [0, "Net assets declining -- financial foundation eroding"],
+    [3, "Net assets relatively flat"],
+    [5, "Net assets growing moderately"],
+    [7, "Strong net asset growth -- building financial reserves"],
+  ],
+  surplus_deficit_consistency: [
+    [0, "Chronic deficits -- running losses most years"],
+    [3, "Mixed -- alternating between surplus and deficit"],
+    [5, "Mostly running surpluses"],
+    [7, "Consistent surpluses -- reliable positive margins"],
+  ],
+};
+
+export function interpretMetric(key: string, value: number): string {
+  const tiers = METRIC_INTERPRETATIONS[key];
+  if (!tiers) return "";
+  // Walk the tiers from highest threshold down
+  for (let i = tiers.length - 1; i >= 0; i--) {
+    if (value >= tiers[i][0]) {
+      return tiers[i][1];
+    }
+  }
+  return tiers[0][1];
 }

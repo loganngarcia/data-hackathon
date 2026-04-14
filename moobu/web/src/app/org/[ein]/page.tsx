@@ -5,9 +5,11 @@ import { useParams } from "next/navigation";
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  Cell,
   PieChart,
   Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -22,10 +24,12 @@ import type { NonprofitProfile, PeerComparison } from "@/lib/types";
 import Link from "next/link";
 import {
   formatCurrency,
+  formatFullCurrency,
   formatScore,
   formatDelta,
   reserveMonthsRaw,
-  metricColor,
+  interpretMetric,
+  metricScoreColor,
 } from "@/lib/utils";
 import ScoreRing from "@/components/ScoreRing";
 import TierBadge from "@/components/TierBadge";
@@ -254,16 +258,33 @@ function FinancialSummaryTab({ profile }: { profile: NonprofitProfile }) {
     ? formatDelta(latest.total_expenses, previous.total_expenses)
     : null;
 
+  const netSurplus = latest?.rev_less_expenses ?? null;
+  const surplusDelta = latest && previous
+    ? formatDelta(latest.rev_less_expenses, previous.rev_less_expenses)
+    : null;
+
   const reserveMonths = latest
     ? reserveMonthsRaw(latest.net_assets_eoy, latest.total_expenses)
     : null;
 
-  const programEfficiency = latest && latest.total_expenses
-    ? ((latest.total_expenses - (latest.other_revenue || 0)) / latest.total_expenses * 100)
+  // Program efficiency: program_expense_ratio metric (0-10 scale) or compute from financials
+  const programRatioMetric = profile.metrics?.program_expense_ratio;
+  const programEfficiency = programRatioMetric != null
+    ? programRatioMetric * 10
+    : (latest && latest.total_expenses && latest.total_expenses > 0
+      ? ((latest.total_expenses - (latest.other_revenue || 0)) / latest.total_expenses * 100)
+      : null);
+
+  // Revenue concentration interpretation
+  const hhi = profile.metrics?.revenue_concentration_hhi;
+  const hhiLabel = hhi != null
+    ? (hhi >= 7 ? "Diversified" : hhi >= 4 ? "Moderate" : "Concentrated")
     : null;
 
-  // Use metrics for HHI if available
-  const hhi = profile.metrics?.revenue_concentration_hhi;
+  // Reserve months color
+  const reserveColor = reserveMonths != null
+    ? (reserveMonths > 6 ? "#10B981" : reserveMonths >= 3 ? "#F5A623" : "#EF4444")
+    : "#6B7280";
 
   const metricEntries = profile.metrics
     ? Object.entries(METRIC_LABELS).map(([key, label]) => ({
@@ -274,96 +295,356 @@ function FinancialSummaryTab({ profile }: { profile: NonprofitProfile }) {
       }))
     : [];
 
+  // Chart data: Revenue vs Expenses grouped bars
+  const barChartData = profile.financials.map((f) => ({
+    year: String(f.tax_year),
+    Revenue: f.total_revenue || 0,
+    Expenses: f.total_expenses || 0,
+  }));
+
+  // Surplus/Deficit trend data
+  const surplusChartData = profile.financials.map((f) => ({
+    year: String(f.tax_year),
+    value: f.rev_less_expenses || 0,
+  }));
+
+  // Collapsible explanation state
+  const [showExplanation, setShowExplanation] = useState(false);
+
   return (
     <div className="space-y-6 animate-card-in">
-      {/* Key Metrics Grid (2x3) */}
+      {/* === Key Metrics Row === */}
       {latest && (
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Total Revenue */}
-          <div className="metric-widget">
+          <div className="metric-widget text-center">
             <p className="metric-widget-label">Total Revenue</p>
-            <p className="metric-widget-value text-[#3B69B7]">
-              {formatCurrency(latest.total_revenue)}
+            <p className="metric-widget-value text-[#3B69B7] mt-1">
+              {formatFullCurrency(latest.total_revenue)}
             </p>
             {revenueDelta && (
-              <span className={revenueDelta.positive ? "delta-positive delta-arrow-up" : "delta-negative delta-arrow-down"}>
-                {revenueDelta.text} YoY
-              </span>
+              <p className={`mt-2 text-xs font-semibold ${revenueDelta.positive ? "text-[#10B981]" : "text-[#EF4444]"}`}>
+                {revenueDelta.text} vs prior year
+              </p>
             )}
           </div>
 
           {/* Total Expenses */}
-          <div className="metric-widget">
+          <div className="metric-widget text-center">
             <p className="metric-widget-label">Total Expenses</p>
-            <p className="metric-widget-value text-[#F43F5E]">
-              {formatCurrency(latest.total_expenses)}
+            <p className="metric-widget-value text-[#F43F5E] mt-1">
+              {formatFullCurrency(latest.total_expenses)}
             </p>
             {expenseDelta && (
-              <span className={!expenseDelta.positive ? "delta-positive delta-arrow-down" : "delta-negative delta-arrow-up"}>
-                {expenseDelta.text} YoY
-              </span>
+              <p className={`mt-2 text-xs font-semibold ${!expenseDelta.positive ? "text-[#10B981]" : "text-[#EF4444]"}`}>
+                {expenseDelta.text} vs prior year
+              </p>
+            )}
+          </div>
+
+          {/* Net Surplus/Deficit */}
+          <div className="metric-widget text-center">
+            <p className="metric-widget-label">Net Surplus / Deficit</p>
+            <p
+              className="metric-widget-value mt-1"
+              style={{ color: (netSurplus ?? 0) >= 0 ? "#10B981" : "#EF4444" }}
+            >
+              {formatFullCurrency(netSurplus)}
+            </p>
+            {surplusDelta && (
+              <p className={`mt-2 text-xs font-semibold ${surplusDelta.positive ? "text-[#10B981]" : "text-[#EF4444]"}`}>
+                {surplusDelta.text} vs prior year
+              </p>
             )}
           </div>
 
           {/* Net Asset Position */}
-          <div className="metric-widget">
+          <div className="metric-widget text-center">
             <p className="metric-widget-label">Net Asset Position</p>
-            <p className="metric-widget-value text-[#10B981]">
-              {formatCurrency(latest.net_assets_eoy)}
+            <p className="metric-widget-value text-[#8B5CF6] mt-1">
+              {formatFullCurrency(latest.net_assets_eoy)}
             </p>
           </div>
+        </div>
+      )}
 
+      {/* === Operating Health Row === */}
+      {latest && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Operating Reserve */}
           <div className="metric-widget">
             <p className="metric-widget-label">Operating Reserve</p>
-            <p className="metric-widget-value text-[#8B5CF6]">
-              {reserveMonths != null ? `${reserveMonths.toFixed(1)}` : "N/A"}
-              <span className="text-sm font-normal text-muted"> months</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <p className="metric-widget-value" style={{ color: reserveColor }}>
+                {reserveMonths != null ? reserveMonths.toFixed(1) : "N/A"}
+              </p>
+              <span className="text-sm font-medium text-muted">months</span>
+              <span
+                className="ml-auto inline-block w-3 h-3 rounded-full"
+                style={{ backgroundColor: reserveColor }}
+              />
+            </div>
+            <p className="text-xs text-muted mt-2">
+              {reserveMonths != null
+                ? reserveMonths > 6
+                  ? "Healthy runway to cover operating costs"
+                  : reserveMonths >= 3
+                  ? "Moderate -- approaching recommended 6-month target"
+                  : "Below recommended minimum of 3 months"
+                : "Insufficient data to calculate"}
             </p>
           </div>
 
           {/* Program Efficiency */}
           <div className="metric-widget">
             <p className="metric-widget-label">Program Efficiency</p>
-            <p className="metric-widget-value text-[#0891B2]">
-              {programEfficiency != null ? `${programEfficiency.toFixed(1)}%` : "N/A"}
+            <div className="flex items-baseline gap-2 mt-1">
+              <p className="metric-widget-value text-[#0891B2]">
+                {programEfficiency != null ? `${programEfficiency.toFixed(1)}%` : "N/A"}
+              </p>
+            </div>
+            <p className="text-xs text-muted mt-2">
+              {programEfficiency != null
+                ? `Of every dollar, ${(programEfficiency / 100).toFixed(2)} cents goes to mission`
+                : "Insufficient data to calculate"}
             </p>
           </div>
 
-          {/* Revenue Concentration (HHI) */}
+          {/* Revenue Concentration */}
           <div className="metric-widget">
-            <p className="metric-widget-label">Revenue Concentration (HHI)</p>
-            <p className="metric-widget-value text-[#F5A623]">
-              {hhi != null ? `${(hhi * 10).toFixed(1)}` : "N/A"}
-              <span className="text-sm font-normal text-muted"> /10</span>
+            <p className="metric-widget-label">Revenue Concentration</p>
+            <div className="flex items-baseline gap-2 mt-1">
+              <p className="metric-widget-value text-[#F5A623]">
+                {hhi != null ? hhi.toFixed(1) : "N/A"}
+                <span className="text-sm font-normal text-muted"> /10</span>
+              </p>
+              {hhiLabel && (
+                <span
+                  className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full"
+                  style={{
+                    background: hhi != null && hhi >= 7 ? "#DCFCE7" : hhi != null && hhi >= 4 ? "#FEF3E2" : "#FEE2E2",
+                    color: hhi != null && hhi >= 7 ? "#166534" : hhi != null && hhi >= 4 ? "#92400E" : "#991B1B",
+                  }}
+                >
+                  {hhiLabel}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted mt-2">
+              {hhi != null ? interpretMetric("revenue_concentration_hhi", hhi) : "Insufficient data"}
             </p>
           </div>
         </div>
       )}
 
-      {/* Resilience Score Breakdown */}
+      {/* === Revenue vs Expenses Bar Chart === */}
+      {barChartData.length > 0 && (
+        <div className="widget-chart p-6">
+          <h2 className="text-lg font-semibold mb-1">Revenue vs Expenses</h2>
+          <p className="text-xs text-muted mb-4">
+            Year-over-year comparison of total revenue and total expenses
+          </p>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={barChartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <XAxis dataKey="year" tick={{ fontSize: 12 }} />
+              <YAxis
+                tickFormatter={(v) =>
+                  Number(v) >= 1e9
+                    ? `$${(Number(v) / 1e9).toFixed(1)}B`
+                    : Number(v) >= 1e6
+                    ? `$${(Number(v) / 1e6).toFixed(1)}M`
+                    : `$${(Number(v) / 1e3).toFixed(0)}K`
+                }
+                tick={{ fontSize: 12 }}
+              />
+              <Tooltip
+                formatter={(value) => formatFullCurrency(Number(value))}
+                labelFormatter={(label) => `Tax Year ${label}`}
+              />
+              <Legend />
+              <Bar dataKey="Revenue" fill="#3B69B7" radius={[4, 4, 0, 0]} barSize={32} />
+              <Bar dataKey="Expenses" fill="#F5A623" radius={[4, 4, 0, 0]} barSize={32} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* === Surplus/Deficit Trend === */}
+      {surplusChartData.length > 0 && (
+        <div className="widget-chart p-6">
+          <h2 className="text-lg font-semibold mb-1">Surplus / Deficit Trend</h2>
+          <p className="text-xs text-muted mb-4">
+            Net income (revenue minus expenses) by tax year
+          </p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={surplusChartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <XAxis dataKey="year" tick={{ fontSize: 12 }} />
+              <YAxis
+                tickFormatter={(v) =>
+                  Number(v) >= 1e9
+                    ? `$${(Number(v) / 1e9).toFixed(1)}B`
+                    : Number(v) >= 1e6
+                    ? `$${(Number(v) / 1e6).toFixed(1)}M`
+                    : Number(v) <= -1e6
+                    ? `-$${(Math.abs(Number(v)) / 1e6).toFixed(1)}M`
+                    : `$${(Number(v) / 1e3).toFixed(0)}K`
+                }
+                tick={{ fontSize: 12 }}
+              />
+              <Tooltip
+                formatter={(value) => formatFullCurrency(Number(value))}
+                labelFormatter={(label) => `Tax Year ${label}`}
+              />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={36} name="Net Income">
+                {surplusChartData.map((entry, i) => (
+                  <Cell key={i} fill={entry.value >= 0 ? "#10B981" : "#EF4444"} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* === Resilience Score Breakdown === */}
       {metricEntries.length > 0 && (
         <div className="widget-chart p-6">
           <h2 className="text-lg font-semibold mb-1">
             Resilience Score Breakdown
           </h2>
-          <p className="text-xs text-muted mb-5">
-            Individual metric scores out of 10 -- higher is better
+          <p className="text-xs text-muted mb-6">
+            Each metric is scored 0 to 10. Colors indicate performance: green (7-10 strong), yellow (4-6.9 moderate), red (0-3.9 at risk).
           </p>
-          <div className="space-y-4">
-            {metricEntries.map((m, i) => (
-              <ColorMetricBar
-                key={m.key}
-                label={m.label}
-                value={m.value}
-                maxValue={10}
-                color={metricColor(m.key)}
-                index={i}
-              />
-            ))}
+          <div className="space-y-5">
+            {metricEntries.map((m, i) => {
+              const color = metricScoreColor(m.value);
+              const pct = Math.min(Math.max((m.value / 10) * 100, 0), 100);
+              const explanation = interpretMetric(m.key, m.value);
+
+              return (
+                <div
+                  key={m.key}
+                  className="animate-slide-in"
+                  style={{ animationDelay: `${i * 50}ms` }}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-foreground">
+                      {m.label}
+                    </span>
+                    <span
+                      className="text-sm font-bold tabular-nums"
+                      style={{ color }}
+                    >
+                      {m.value.toFixed(1)} / 10
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full animate-bar-grow"
+                      style={{
+                        width: `${pct}%`,
+                        backgroundColor: color,
+                        animationDelay: `${i * 50 + 200}ms`,
+                      }}
+                    />
+                  </div>
+                  {/* Interpretation */}
+                  <p className="text-xs text-muted mt-1">
+                    {explanation}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
+
+      {/* === Understanding the Resilience Score === */}
+      <div className="advisory-note">
+        <button
+          onClick={() => setShowExplanation(!showExplanation)}
+          className="w-full flex items-center justify-between text-left"
+        >
+          <div className="flex items-center gap-2">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#3B69B7"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span className="advisory-note-title" style={{ marginBottom: 0 }}>
+              Understanding the Resilience Score
+            </span>
+          </div>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#3B69B7"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              transform: showExplanation ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.2s ease",
+            }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        {showExplanation && (
+          <div className="mt-4 space-y-3 text-sm text-foreground leading-relaxed">
+            <p>
+              The Resilience Score (0-100) measures a nonprofit&apos;s financial health and ability to withstand economic shocks. It combines 8 financial metrics extracted from IRS Form 990 filings.
+            </p>
+
+            <div>
+              <p className="font-semibold mb-1">How it&apos;s calculated:</p>
+              <p>
+                Each metric is scored 0-10 based on the organization&apos;s performance relative to all nonprofits in the database. Revenue Diversification and Operating Reserves are weighted 2x because they are the strongest predictors of financial resilience. The weighted average is then scaled to 0-100.
+              </p>
+            </div>
+
+            <div>
+              <p className="font-semibold mb-1">Score tiers:</p>
+              <ul className="space-y-1 ml-1">
+                <li className="flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#10B981]" />
+                  <span><span className="font-semibold">75-100 Thriving:</span> Strong financial position with diversified revenue and adequate reserves</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#3B69B7]" />
+                  <span><span className="font-semibold">50-74 Stable:</span> Generally healthy but may have areas for improvement</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#F5A623]" />
+                  <span><span className="font-semibold">25-49 Needs Support:</span> Showing financial stress signals that warrant attention</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#EF4444]" />
+                  <span><span className="font-semibold">0-24 Urgent:</span> Multiple critical risk factors requiring immediate intervention</span>
+                </li>
+              </ul>
+            </div>
+
+            <p className="text-xs text-muted pt-1">
+              Data source: IRS Form 990 public filings, analyzed across multiple tax years.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -899,50 +1180,6 @@ function RiskAssessmentTab({
           </p>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   SHARED COMPONENTS
-   ============================================================ */
-
-function ColorMetricBar({
-  label,
-  value,
-  maxValue,
-  color,
-  index,
-}: {
-  label: string;
-  value: number;
-  maxValue: number;
-  color: string;
-  index: number;
-}) {
-  const pct = Math.min(Math.max((value / maxValue) * 100, 0), 100);
-
-  return (
-    <div
-      className="flex items-center gap-3 animate-slide-in"
-      style={{ animationDelay: `${index * 50}ms` }}
-    >
-      <span className="text-xs text-muted w-48 text-right flex-shrink-0">
-        {label}
-      </span>
-      <div className="metric-bar-track flex-1">
-        <div
-          className="metric-bar-fill animate-bar-grow"
-          style={{
-            width: `${pct}%`,
-            backgroundColor: color,
-            animationDelay: `${index * 50 + 200}ms`,
-          }}
-        />
-      </div>
-      <span className="text-xs font-mono font-semibold w-10 text-right" style={{ color }}>
-        {value.toFixed(1)}
-      </span>
     </div>
   );
 }
